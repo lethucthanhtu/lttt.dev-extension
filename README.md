@@ -1,52 +1,46 @@
-# React + Vite + CRXJS
+## 🚀 Usage
 
-This template helps you quickly start developing Chrome extensions with React, TypeScript and Vite. It includes the CRXJS Vite plugin for seamless Chrome extension development.
+Once you’ve installed and loaded the extension:
 
-## Features
+### 🖱️ Create Short Link via Right-Click
 
-- React with TypeScript
-- TypeScript support
-- Vite build tool
-- CRXJS Vite plugin integration
-- Chrome extension manifest configuration
+1. Right-click on **any link** or **anywhere on a page**.
+2. Choose **“Create short link”** from the context menu.
+3. The extension will:
 
-## Quick Start
+   * Fetch the page’s metadata (like title).
+   * Send the URL to **[lttt.dev](https://lttt.dev)** to create a short version.
+   * Automatically **copy the shortened link** to your clipboard.
+   * Show a small **toast notification** at the bottom-right corner:
 
-1. Install dependencies:
+     > “Short URL copied”
 
-```bash
-npm install
+### 🔗 Example
+
+If you right-click on
+
+```
+https://developer.chrome.com/docs/extensions/
 ```
 
-2. Start development server:
+You’ll get a shortened link like:
 
-```bash
-npm run dev
+```
+https://lttt.dev/abc123
 ```
 
-3. Open Chrome and navigate to `chrome://extensions/`, enable "Developer mode", and load the unpacked extension from the `dist` directory.
+which is already copied — just paste it anywhere.
 
-4. Build for production:
+### 🔐 Authentication
 
-```bash
-npm run build
-```
+If you’re **not logged in**, the extension will automatically open
+👉 [https://lttt.dev/auth/login](https://lttt.dev/auth/login)
+so you can sign in before shortening URLs.
 
-## Project Structure
+### 🧭 Click Extension Icon
 
-- `src/popup/` - Extension popup UI
-- `src/content/` - Content scripts
-- `manifest.config.ts` - Chrome extension manifest configuration
+Clicking the extension’s toolbar icon opens **[https://lttt.dev](https://lttt.dev)** in a new tab.
 
-## Documentation
+---
 
-- [React Documentation](https://reactjs.org/)
-- [Vite Documentation](https://vitejs.dev/)
-- [CRXJS Documentation](https://crxjs.dev/vite-plugin)
-
-## Chrome Extension Development Notes
-
-- Use `manifest.config.ts` to configure your extension
-- The CRXJS plugin automatically handles manifest generation
-- Content scripts should be placed in `src/content/`
-- Popup UI should be placed in `src/popup/`
+Would you like me to add short setup notes before this (like how to install it from Chrome or load unpacked)?
