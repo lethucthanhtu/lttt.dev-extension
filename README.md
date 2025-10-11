@@ -19,13 +19,13 @@ Once you’ve installed and loaded the extension:
 
 If you right-click on
 
-```
+```txt
 https://developer.chrome.com/docs/extensions/
 ```
 
 You’ll get a shortened link like:
 
-```
+```txt
 https://lttt.dev/abc123
 ```
 
@@ -40,4 +40,3 @@ so you can sign in before shortening URLs.
 ### 🧭 Click Extension Icon
 
 Clicking the extension’s toolbar icon opens **[https://lttt.dev](https://lttt.dev)** in a new tab.
-
