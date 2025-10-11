@@ -42,7 +42,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
-      chrome.tabs.create({ url: `${BASE_URL}/api/auth/login` });
+      chrome.tabs.create({ url: `${BASE_URL}/login` });
       return;
     }
   }
