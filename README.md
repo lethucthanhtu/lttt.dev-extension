@@ -41,6 +41,3 @@ so you can sign in before shortening URLs.
 
 Clicking the extension’s toolbar icon opens **[https://lttt.dev](https://lttt.dev)** in a new tab.
 
----
-
-Would you like me to add short setup notes before this (like how to install it from Chrome or load unpacked)?
