@@ -47,17 +47,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 				args: ['Start shorten URL. Be patient.'],
 			});
 
-		// Get metadata + shorten URL
-		const { data: metaRes } = await axios.get(
-			`${BASE_URL}/api/utils/metadata`,
-			{ params: { url } }
-		);
-		const title = metaRes?.metadata?.title || '';
+		// Get metadata
+		let title = '';
+		try {
+			const { data: metaRes } = await axios.get(
+				`${BASE_URL}/api/utils/metadata`,
+				{
+					params: { url },
+				}
+			);
+			title = metaRes?.metadata?.title || '';
+		} catch (error) { }
+
+		// Create Short URL
 		const { data } = await axios.post(`${BASE_URL}/api/url`, {
 			title,
 			original_url: url,
 		});
-
 		const shortUrl = `${BASE_URL}/${data.shorten_url}`;
 
 		if (tab?.id)
