@@ -1,12 +1,7 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './views/App.tsx'
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 
-const container = document.createElement('div')
-container.id = 'lttt-dev-ext'
-document.body.appendChild(container)
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const container = document.createElement('div');
+container.id = 'lttt-dev-ext';
+document.body.appendChild(container);
+createRoot(container).render(<StrictMode></StrictMode>);

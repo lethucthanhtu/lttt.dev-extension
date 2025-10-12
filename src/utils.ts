@@ -7,8 +7,8 @@
 export const showToast = async ( tabId: number, message: string, duration = 2000 ): Promise<void> => {
 	await chrome.scripting.executeScript({
 		target: { tabId: tabId },
-		args: [message],
-		func: (msg) => {
+		args: [message, duration],
+		func: (msg: string, duration: number) => {
 			const toast = document.createElement('div');
 			toast.textContent = msg;
 			Object.assign(toast.style, {
