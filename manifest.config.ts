@@ -3,35 +3,20 @@ import pkg from './package.json';
 
 export default defineManifest({
 	manifest_version: 3,
-	name: pkg.name,
+	name: pkg.name.replace('-e', ' E'),
 	version: pkg.version,
-	icons: {
-		48: 'public/logo.png',
-	},
-	action: {
-		default_icon: {
-			48: 'public/logo.png',
-		},
-		// default_popup: "src/popup/index.html",
-	},
-	permissions: [
-		// 'sidePanel',
-		// 'contentSettings',
-		// 'background',
-		'contextMenus',
-		'activeTab',
-		'scripting',
-		'clipboardWrite',
-	],
+	homepage_url: 'https://lttt.dev',
+	author: { email: 'lethucthanhtu+extension@gamil.com' },
+	description: 'Extension for quick and easy create lttt.dev link',
+	icons: { 48: 'public/logo.png' },
+	action: { default_icon: { 48: 'public/logo.png' } },
+	permissions: ['contextMenus', 'activeTab', 'scripting', 'clipboardWrite'],
 	content_scripts: [
 		{
 			js: ['src/content/main.tsx'],
 			matches: ['https://*/*'],
 		},
 	],
-	// side_panel: {
-	// 	default_path: 'src/sidepanel/index.html',
-	// },
 	background: {
 		service_worker: 'src/background.ts',
 		type: 'module',
