@@ -20,7 +20,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 	try {
 		await utils.showToast(tab.id, 'Start to shorten URL. ', 1000);
 
-		const title = await api.fetchMeta(url);
+		const title = await api.fetchMetadataTitle(url);
 		const shortUrl = await api.createShortUrl(url, title);
 
 		await utils.copyToClipboard(tab.id, shortUrl);

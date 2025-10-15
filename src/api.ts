@@ -11,19 +11,15 @@ export const BASE_URL = 'https://lttt.dev';
 const API = axios.create({ baseURL: BASE_URL });
 
 /**
- * fetch Metadata from endpoint
+ * fetch Metadata title from endpoint
  * @param url
  * @returns
  */
-export const fetchMeta = async (url: string): Promise<string> => {
+export const fetchMetadataTitle = async (url: string): Promise<string> => {
 	try {
-		const { data } = await API.get(`/api/utils/metadata`, {
-			params: { url },
-		});
+		const { data } = await API.get(`/api/utils/metadata`, { params: { url }, });
 		return data?.metadata?.title || '';
-	} catch {
-		return '';
-	}
+	} catch { return ''; }
 };
 
 /**
@@ -33,9 +29,6 @@ export const fetchMeta = async (url: string): Promise<string> => {
  * @returns
  */
 export const createShortUrl = async (originalUrl: string, title: string): Promise<string> => {
-	const { data } = await API.post(`/api/url`, {
-		title,
-		original_url: originalUrl,
-	});
+	const { data } = await API.post(`/api/url`, { title, original_url: originalUrl, });
 	return `${BASE_URL}/${data.shorten_url}`;
 };
