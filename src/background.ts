@@ -26,14 +26,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 		await utils.showToast(tab.id, 'Short URL copied! ✓', 3000);
 	} catch (error) {
 		if (axios.isAxiosError(error)) {
-			if (error.response?.status === 401) {
-				chrome.tabs.create({ url: `${api.BASE_URL}/api/auth/login` });
-				return;
-			}
-			if (error.response?.status === 400) {
-				const msg = error.response.data?.error ?? 'Invalid URL';
-				await utils.showToast(tab.id, msg, 2_500);
-				return;
+			switch (error.response?.status) {
+				case 401:
+					chrome.tabs.create({ url: `${api.BASE_URL}/login` });
+					return;
+				case 400:
+					const msg = error.response.data?.error ?? 'Invalid URL';
+					await utils.showToast(tab.id, msg, 2_500);
+					return;
+				default:
+					break;
 			}
 		}
 		await utils.showToast(tab.id, 'Failed to shorten URL', 2000);
