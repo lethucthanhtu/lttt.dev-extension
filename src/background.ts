@@ -18,20 +18,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 	if (!tab?.id || !url) return;
 
 	try {
-		await utils.showToast(tab.id, 'Start to shorten URL. ', 1000);
+		await utils.showToast(tab.id, 'Shortening URL…', 1000);
 
-		const title = await api.fetchMetadataTitle(url);
-		const shortUrl = await api.createShortUrl(url, title);
+		const { short_url } = await api.shortenUrl(url);
 
-		await utils.copyToClipboard(tab.id, shortUrl);
-
-		await utils.showToast(tab.id, 'Short URL is copied.  ', 3000);
+		await utils.copyToClipboard(tab.id, short_url);
+		await utils.showToast(tab.id, 'Short URL copied! ✓', 3000);
 	} catch (error) {
-		if (axios.isAxiosError(error) && error.response?.status === 401) {
-			chrome.tabs.create({ url: `${api.BASE_URL}/login` });
-			return;
+		if (axios.isAxiosError(error)) {
+			if (error.response?.status === 401) {
+				chrome.tabs.create({ url: `${api.BASE_URL}/api/auth/login` });
+				return;
+			}
+			if (error.response?.status === 400) {
+				const msg = error.response.data?.error ?? 'Invalid URL';
+				await utils.showToast(tab.id, msg, 2_500);
+				return;
+			}
 		}
-
-		await utils.showToast(tab.id, 'Failed to shorten URL.', 2000);
+		await utils.showToast(tab.id, 'Failed to shorten URL', 2000);
 	}
 });
