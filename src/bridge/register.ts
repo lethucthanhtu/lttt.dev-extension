@@ -8,11 +8,13 @@ const CONTENT_SCRIPT = 'src/content/bridge.js';
 const SCRIPT_ID = 'lttt-bridge';
 
 /**
- * Sites the content script runs on: web apps live only on subdomains of
- * lttt.dev. It still stays silent unless the background confirms that the
- * page sent a valid signed certificate for its origin.
+ * Sites the content script runs on: web apps live only on lttt.dev itself
+ * (the apex) and its subdomains. It still stays silent unless the background
+ * confirms that the page sent a valid signed certificate for its origin.
  */
-const MATCHES = ['https://*.lttt.dev/*']; // APP_DOMAIN in config.ts
+// Chrome's `*.lttt.dev` already covers the apex; it is listed explicitly so it
+// does not depend on that rule (cert matching never lets a wildcard cover it).
+export const MATCHES = ['https://lttt.dev/*', 'https://*.lttt.dev/*']; // APP_DOMAIN in config.ts
 
 /** (Re)register the content script, dropping any older registration. */
 export const syncContentScript = async (): Promise<void> => {

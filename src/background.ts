@@ -3,7 +3,7 @@ import * as utils from './utils';
 import * as api from './api';
 import { initBridge } from './bridge/background';
 
-// Bridge between *.lttt.dev web apps and other sites
+// Bridge between lttt.dev / *.lttt.dev web apps and other sites
 initBridge();
 
 // Redirect user to website when click extension icon

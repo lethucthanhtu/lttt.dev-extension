@@ -7,12 +7,14 @@
  * never enters this repo:
  *
  *   cert = base64url(payload JSON) + "." + base64url(signature)
- *   payload = { "v": 4, "apps": ["https://app.lttt.dev", "https://*.lttt.dev", …] }
+ *   payload = { "v": 4, "apps": ["https://lttt.dev", "https://*.lttt.dev", …] }
  *
  * Every app must be on APP_DOMAIN (config.ts): an exact origin
- * `https://<sub>.lttt.dev`, or a wildcard `https://*.lttt.dev` /
- * `https://*.<sub>.lttt.dev` matching subdomains at any depth on the default
- * port. One invalid entry invalidates the whole certificate.
+ * `https://lttt.dev` (the apex) or `https://<sub>.lttt.dev`, or a wildcard
+ * `https://*.lttt.dev` / `https://*.<sub>.lttt.dev` matching subdomains at any
+ * depth on the default port. A wildcard never matches its own base: the apex
+ * is allowed only when listed exactly. One invalid entry invalidates the whole
+ * certificate.
  *
  * The signature is ECDSA P-256 / SHA-256 in IEEE-P1363 form (64 bytes, r||s)
  * over the ASCII bytes of the first part. Only the background verifies certs;
@@ -60,6 +62,7 @@ export const certAllows = (cert: AppCert, origin: string): boolean => {
 	if (!isAppOrigin(origin)) return false;
 	if (cert.apps.includes(origin)) return true;
 	const host = new URL(origin).hostname;
+	// Subdomains only: `https://*.lttt.dev` does not match `https://lttt.dev`.
 	return cert.wildcards.some((base) => host.endsWith(`.${base}`));
 };
 

@@ -371,7 +371,7 @@ const allowedApp = async (
 	) {
 		return null;
 	}
-	// certAllows also requires an https *.lttt.dev origin.
+	// certAllows also requires an https lttt.dev / *.lttt.dev origin.
 	const cert = await verifyCert(message.cert);
 	return cert && certAllows(cert, sender.origin) ? sender.origin : null;
 };

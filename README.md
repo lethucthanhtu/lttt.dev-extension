@@ -9,7 +9,7 @@ A Chromium based extension for [**lttt.dev**](https://lttt.dev) — quickly crea
 - Right-click any link/page → **“Create short link”** using lttt.dev
 - Quickly open [lttt.dev](https://lttt.dev) from the extension icon
 - Works seamlessly with your logged-in lttt.dev account
-- Optional **bridge**: lets a signed web app on `*.lttt.dev` get data (cookies, pages) from another site with your session there, after you allow it (see below)
+- Optional **bridge**: lets a signed web app on `lttt.dev` or `*.lttt.dev` get data (cookies, pages) from another site with your session there, after you allow it (see below)
 
 ---
 
@@ -85,7 +85,7 @@ _Coming soon..._
 
 ## 🔐 Bridge
 
-Lets a web app on `*.lttt.dev` get data from another site (the **source**) using your session there: read a cookie, read all of its cookies, or load a page or API as you. The data goes back to the web app page. The extension is not tied to any site: each request names its source, and you approve every (web app, source) pair once.
+Lets a web app on `lttt.dev` or `*.lttt.dev` get data from another site (the **source**) using your session there: read a cookie, read all of its cookies, or load a page or API as you. The data goes back to the web app page. The extension is not tied to any site: each request names its source, and you approve every (web app, source) pair once.
 
 Example: `app.lttt.dev` asks for the `session` cookie of `https://accounts.example.com`, and `other.lttt.dev` asks for `https://example.com/api/me`. Each pair gets its own approval.
 
@@ -98,7 +98,7 @@ Every other page gets **no reply at all**, so it cannot detect the extension.
 
 ### How it works
 
-1. On install and on browser start, the extension registers a small content script for `https://*.lttt.dev/*` only. It forwards the page's messages to the background service worker, and replies to the page only if the background accepted it.
+1. On install and on browser start, the extension registers a small content script for `https://lttt.dev/*` and `https://*.lttt.dev/*` only. It forwards the page's messages to the background service worker, and replies to the page only if the background accepted it.
 2. The background checks the sender from `sender.origin`, which the browser sets (the page cannot fake it). The message must come from this extension's content script, in the top frame of a tab, with a valid certificate listing that origin.
 3. For a request, the background:
    - checks the request (source origin, items, URLs);
@@ -116,7 +116,7 @@ The source may be any `https` site, so the extension requires host access to `ht
 
 What limits the risk:
 
-- The content script runs only on `https://*.lttt.dev/*`, and answers only pages the background accepted.
+- The content script runs only on `https://lttt.dev/*` and `https://*.lttt.dev/*`, and answers only pages the background accepted.
 - Only apps listed in a certificate signed by the project's key can talk to the extension. The signing private key never enters this repo.
 - Nothing is read from a site until you allow that app to use it, in a window the page cannot draw or click. Denials are remembered too, and you can revoke any decision.
 - Data goes only to the page that asked (same origin, top frame).
@@ -131,7 +131,7 @@ All messages use `window.postMessage(…, location.origin)` on the web app page.
 
 | Page → extension | Extension → page |
 | --- | --- |
-| `{type:'ping', id, cert}` | `{type:'pong', id, version: 5, extVersion: '3.0.0'}` |
+| `{type:'ping', id, cert}` | `{type:'pong', id, version: 5, extVersion: '3.1.0'}` |
 | `{type:'request', id, cert, request}` | `{type:'pending', id, code}` then `{type:'result', id, ok, data?, code?}` |
 | | or `{type:'result', id, ok, data?, code?}` directly |
 
@@ -173,14 +173,14 @@ Pending codes: `CONSENT_REQUIRED` (the consent window is open) and `LOGIN_STARTE
 
 ```text
 cert    = base64url(payload JSON) + "." + base64url(signature)
-payload = { "v": 4, "apps": ["https://app.lttt.dev", "https://*.lttt.dev"] }
+payload = { "v": 4, "apps": ["https://lttt.dev", "https://app.lttt.dev", "https://*.lttt.dev"] }
 ```
 
 - The signature is ECDSA P-256 with SHA-256, in IEEE-P1363 form (64 bytes, `r‖s`), over the ASCII bytes of the first part. base64url has no padding.
 - `v` must be `4`. Older certificates are rejected.
 - `apps` holds 1 to 32 entries. Each is either:
-  - an exact origin `https://<sub>.lttt.dev` (default port, no credentials, any path ignored); `https://lttt.dev` itself is not allowed; or
-  - a wildcard `https://*.lttt.dev` or `https://*.<sub>.lttt.dev`, matching every `https` origin on the default port whose host is a subdomain of that base, at any depth. No port or path.
+  - an exact origin `https://lttt.dev` (the apex, since 3.1.0) or `https://<sub>.lttt.dev` (default port, no credentials, any path ignored); or
+  - a wildcard `https://*.lttt.dev` or `https://*.<sub>.lttt.dev`, matching every `https` origin on the default port whose host is a subdomain of that base, at any depth. No port or path. A wildcard never matches its own base: `https://*.lttt.dev` does not cover `https://lttt.dev`, which must be listed exactly.
 
   One invalid entry (another domain, `http`, a port, `localhost`…) invalidates the whole certificate.
   - **Security:** with a wildcard, any matching subdomain can talk to the extension (consent is still asked per app origin). Use one only if you control every subdomain: no user-generated content, no third-party previews, no dangling DNS records (subdomain takeover).
@@ -253,10 +253,10 @@ openssl rsa -in ~/keys/my-extension-key.pem -pubout -outform DER | openssl dgst 
 
 Prerequisites:
 - an account on a source site you can log in to (for example `https://accounts.example.com`);
-- a web app deployed on a `*.lttt.dev` subdomain with a valid certificate for its origin.
+- a web app deployed on `lttt.dev` or a `*.lttt.dev` subdomain with a valid certificate for its origin.
 
 1. Run `npm run build`, then load `dist/` unpacked. Confirm the ID in `chrome://extensions`.
-2. Detection: open the web app. It should detect the extension (`pong` with `version: 5`). On any other site, in the DevTools console, `window.postMessage({source:'lttt-bridge',type:'ping',id:1,cert:'x'}, location.origin)` should get no reply. The app's certificate sent from a `*.lttt.dev` page it does not list should get no reply either.
+2. Detection: open the web app. It should detect the extension (`pong` with `version: 5`). On any other site, in the DevTools console, `window.postMessage({source:'lttt-bridge',type:'ping',id:1,cert:'x'}, location.origin)` should get no reply. The app's certificate sent from a `lttt.dev` / `*.lttt.dev` page it does not list should get no reply either.
 3. Consent: send a request for the source. Expect `pending` / `CONSENT_REQUIRED` and the consent window showing the app and the source.
    - Close the window → `result` / `CANCELLED`.
    - Ask again and click **Deny** → `DENIED`; asking again returns `DENIED` at once.

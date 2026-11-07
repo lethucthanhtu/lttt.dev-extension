@@ -2,9 +2,10 @@
  * Bridge — shared constants and types (background, content script, extension
  * pages).
  *
- * A web app on `https://*.lttt.dev` with a signed certificate (cert.ts) may ask
- * the extension to read cookies of, or fetch data from, another https site (the
- * source) with the user's session there, and get the data back. The
+ * A web app on `https://lttt.dev` or `https://*.lttt.dev` with a signed
+ * certificate (cert.ts) may ask the extension to read cookies of, or fetch data
+ * from, another https site (the source) with the user's session there, and get
+ * the data back. The
  * certificate only proves the app may talk to the extension; the source comes
  * from each request, and the user approves every (app, source) pair once.
  */
@@ -23,7 +24,7 @@ export const RUNTIME_DELIVER = 'lttt-bridge:deliver';
 export const RUNTIME_CONSENT = 'lttt-bridge:consent';
 export const PROTOCOL_VERSION = 5;
 
-/** Web apps must be served from a subdomain of this domain. */
+/** Web apps must be served from this domain or one of its subdomains. */
 export const APP_DOMAIN = 'lttt.dev';
 
 /** Storage keys. */
@@ -115,9 +116,11 @@ export const toOrigin = (input: unknown): string | null => {
 };
 
 /**
- * Is `origin` an exact https origin on the default port whose host is a
- * subdomain (any depth) of APP_DOMAIN? Applied to the browser-provided sender
- * origin and to every app listed in a certificate.
+ * Is `origin` an exact https origin on the default port whose host is
+ * APP_DOMAIN itself (the apex) or a subdomain (any depth) of it? Applied to
+ * the browser-provided sender origin and to every app listed in a certificate.
+ * Wildcards never match the apex (see certAllows in cert.ts): the apex must be
+ * listed exactly.
  */
 export const isAppOrigin = (origin: string): boolean => {
 	let url: URL;
@@ -131,7 +134,7 @@ export const isAppOrigin = (origin: string): boolean => {
 		!url.port &&
 		url.origin === origin &&
 		!url.hostname.includes('*') &&
-		url.hostname.endsWith(`.${APP_DOMAIN}`)
+		(url.hostname === APP_DOMAIN || url.hostname.endsWith(`.${APP_DOMAIN}`))
 	);
 };
 

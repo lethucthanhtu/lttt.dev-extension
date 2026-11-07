@@ -35,11 +35,11 @@ export default defineManifest(({ mode }) => {
 		// Short links: the service worker calls the lttt.dev API with the user's
 		// cookies. Without this, CORS blocks it ("Failed to shorten URL"); the old
 		// static content script on https://*/* used to grant it implicitly.
-		// Bridge (v5): web apps live on https://*.lttt.dev, but the site they
+		// Bridge (v5): web apps live on https://lttt.dev and https://*.lttt.dev, but the site they
 		// read from (named in each request, approved by the user once per app
 		// and site) may be any https origin, so reading its cookies or fetching
 		// it with the user's session needs access to all https sites. The
-		// content script itself runs only on *.lttt.dev.
+		// content script itself runs only on lttt.dev and *.lttt.dev.
 		host_permissions: ['https://lttt.dev/*', 'https://*/*'],
 		// No static content scripts: they force web_accessible_resources on every
 		// site, which lets any page detect the extension. The bridge content

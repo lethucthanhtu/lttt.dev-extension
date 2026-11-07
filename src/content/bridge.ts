@@ -1,5 +1,6 @@
 /**
- * Bridge — content script. Registered dynamically on https://*.lttt.dev only
+ * Bridge — content script. Registered dynamically on https://lttt.dev and
+ * https://*.lttt.dev only
  * (see src/bridge/register.ts).
  *
  * It stays silent unless the background confirms that this page is an allowed
