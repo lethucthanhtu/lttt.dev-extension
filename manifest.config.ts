@@ -30,7 +30,7 @@ export default defineManifest(({ mode }) => {
 			'clipboardWrite',
 			// Wiki.js session sync
 			'cookies',
-			'storage',
+			'storage', // chrome.storage.session: pending login (no tokens)
 		],
 		// Short links: the service worker calls the lttt.dev API with the user's
 		// cookies. Without this, CORS blocks it ("Failed to shorten URL"); the old
@@ -44,7 +44,6 @@ export default defineManifest(({ mode }) => {
 			'https://*/*',
 			'http://localhost/*',
 		],
-		options_ui: { page: 'src/options/index.html', open_in_tab: true },
 		// No static content scripts: they force web_accessible_resources on every
 		// site, which lets any page detect the extension. The session sync
 		// content script is registered at runtime (src/sync/register.ts) and

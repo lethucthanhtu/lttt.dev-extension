@@ -5,34 +5,22 @@
  * it to the requesting web app, which verifies it and stores its own session.
  * The token is never logged, never stored and never returned to the page.
  *
- * A page is an allowed web app if either:
- * - v3: it sends a certificate signed with the project key (cert.ts) whose
- *   `apps` list the sender's origin. Its wiki is the certificate's `wiki`.
- *   No setup in the extension is needed.
- * - v1/v2: its origin is the web app configured in Options. Its wikis are the
- *   ones the user allowed there.
- * Any other page gets no reply at all.
+ * A page is an allowed web app only if it sends a certificate signed with the
+ * project key (cert.ts) whose `apps` list the sender's origin. Its wiki is the
+ * certificate's `wiki`. No setup in the extension is needed. Any other page
+ * gets no reply at all.
  *
- * v2 adds two deferred flows; their state lives in chrome.storage.session
- * (origins and tab ids only) so it survives the service worker being stopped:
- * - PERMISSION_REQUESTED: the page asked for a wiki origin the user has not
- *   allowed yet. The options page opens prefilled; once the user allows it,
- *   the sync runs and the result is pushed to the app tabs (`synced`).
- * - LOGIN_STARTED: no `jwt` cookie, or the app rejected it. The wiki login
- *   page opens; when a new `jwt` cookie appears (within 10 min) it is POSTed
- *   and the result is pushed to the app tabs (`synced`).
+ * LOGIN_STARTED is a deferred flow; its state lives in chrome.storage.session
+ * (origins and a tab id only) so it survives the service worker being stopped:
+ * with no `jwt` cookie, or when the app rejected it, the wiki login page opens;
+ * when a new `jwt` cookie appears (within 10 min) it is POSTed and the result
+ * is pushed to the app tabs (`synced`).
  */
 import {
 	RUNTIME_PING,
 	RUNTIME_SYNC,
 	RUNTIME_SYNCED,
-	getConfig,
-	hasAppPermission,
-	isConfigChange,
-	isWikiGranted,
 	pattern,
-	toOrigin,
-	type SyncConfig,
 	type SyncErrorCode,
 	type SyncResult,
 } from './config';
@@ -43,35 +31,30 @@ const fail = (code: SyncErrorCode): SyncResult => ({ ok: false, code });
 
 const PENDING_MS = 10 * 60 * 1000;
 const LOGIN_KEY = 'wikijsSessionSync:pendingLogin';
-const PERMISSION_KEY = 'wikijsSessionSync:pendingPermission';
-type PendingKey = typeof LOGIN_KEY | typeof PERMISSION_KEY;
-/** How the app was allowed: signed certificate (v3) or Options config. */
-type Via = 'cert' | 'config';
 type Pending = {
 	appOrigin: string;
 	wikiOrigin: string;
-	via: Via;
 	tabId?: number;
 	expiresAt: number;
 };
 
-const getPending = async (key: PendingKey): Promise<Pending | null> => {
-	const { [key]: p } = await chrome.storage.session.get(key);
+const getPending = async (): Promise<Pending | null> => {
+	const { [LOGIN_KEY]: p } = await chrome.storage.session.get(LOGIN_KEY);
 	const pending = p as Pending | undefined;
 	if (!pending) return null;
 	if (pending.expiresAt < Date.now()) {
-		await chrome.storage.session.remove(key);
+		await chrome.storage.session.remove(LOGIN_KEY);
 		return null;
 	}
 	return pending;
 };
-const setPending = (key: PendingKey, p: Pending) =>
-	chrome.storage.session.set({ [key]: p });
-const clearPending = (key: PendingKey) => chrome.storage.session.remove(key);
+const setPending = (p: Pending) =>
+	chrome.storage.session.set({ [LOGIN_KEY]: p });
+const clearPending = () => chrome.storage.session.remove(LOGIN_KEY);
 
 /**
- * Run tasks one at a time, so overlapping syncs, cookie events and permission
- * grants cannot race on the pending state.
+ * Run tasks one at a time, so overlapping syncs and cookie events cannot race
+ * on the pending state.
  */
 let queue: Promise<unknown> = Promise.resolve();
 const serial = <T>(task: () => Promise<T>): Promise<T> => {
@@ -161,56 +144,31 @@ const focusOrOpen = async (
 };
 
 /**
- * Open the tab for a pending flow. There is at most one tab per kind: if one
- * is still open it is reused (and navigated when the app or wiki differs), so
- * a page cannot flood the browser with tabs by sending many wiki URLs.
+ * Open the wiki login page. There is at most one login tab: if one is still
+ * open it is reused (and navigated when the app or wiki differs), so a page
+ * cannot flood the browser with tabs.
  */
-const openPending = async (
-	key: PendingKey,
-	appOrigin: string,
-	wikiOrigin: string,
-	via: Via,
-	url: string,
-	near?: chrome.tabs.Tab
-) => {
-	const p = await getPending(key);
-	const same = p?.appOrigin === appOrigin && p.wikiOrigin === wikiOrigin;
-	const tabId = await focusOrOpen(p?.tabId, url, !same, near);
-	// At most one pending entry per kind: the latest request wins.
-	await setPending(key, {
-		appOrigin,
-		wikiOrigin,
-		via,
-		tabId,
-		expiresAt: Date.now() + PENDING_MS,
-	});
-};
-
 const startLogin = async (
 	appOrigin: string,
 	wikiOrigin: string,
-	via: Via,
 	near?: chrome.tabs.Tab
 ): Promise<SyncResult> => {
-	await openPending(
-		LOGIN_KEY,
-		appOrigin,
-		wikiOrigin,
-		via,
+	const p = await getPending();
+	const same = p?.appOrigin === appOrigin && p.wikiOrigin === wikiOrigin;
+	const tabId = await focusOrOpen(
+		p?.tabId,
 		`${wikiOrigin}/login`,
+		!same,
 		near
 	);
+	// At most one pending login: the latest request wins.
+	await setPending({
+		appOrigin,
+		wikiOrigin,
+		tabId,
+		expiresAt: Date.now() + PENDING_MS,
+	});
 	return fail('LOGIN_STARTED');
-};
-
-const requestPermission = async (
-	appOrigin: string,
-	wikiOrigin: string,
-	near?: chrome.tabs.Tab
-): Promise<SyncResult> => {
-	const url = `${chrome.runtime.getURL('src/options/index.html')}?wiki=${encodeURIComponent(wikiOrigin)}`;
-	await openPending(PERMISSION_KEY, appOrigin, wikiOrigin, 'config', url, near);
-	return fail('PERMISSION_REQUESTED');
 };
 
 /**
@@ -235,72 +193,34 @@ const broadcast = async (appOrigin: string, result: SyncResult) => {
 	);
 };
 
-/**
- * The sync itself, after the sender checks. `wikiUrl` undefined = v1 page:
- * use the default wiki, and report NO_PERMISSION / NOT_LOGGED_IN / REJECTED
- * instead of starting the interactive flows.
- */
-const runSync = async (
-	config: SyncConfig,
-	wikiUrl: unknown,
-	near?: chrome.tabs.Tab
-): Promise<SyncResult> => {
-	if (!(await hasAppPermission(config))) return fail('NO_PERMISSION');
-
-	const v2 = wikiUrl !== undefined;
-	const wikiOrigin = v2 ? toOrigin(wikiUrl) : (config.wikiOrigins[0] ?? null);
-	if (!wikiOrigin) return fail(v2 ? 'INVALID_WIKI_URL' : 'NOT_CONFIGURED');
-
-	if (!(await isWikiGranted(config, wikiOrigin))) {
-		return v2
-			? requestPermission(config.appOrigin, wikiOrigin, near)
-			: fail('NO_PERMISSION');
-	}
-
-	const token = await readJwt(wikiOrigin);
-	if (!token) {
-		return v2
-			? startLogin(config.appOrigin, wikiOrigin, 'config', near)
-			: fail('NOT_LOGGED_IN');
-	}
-	const result = await postToken(config.appOrigin, token);
-	if (v2 && !result.ok && result.code === 'REJECTED') {
-		return startLogin(config.appOrigin, wikiOrigin, 'config', near);
-	}
-	if (result.ok) await clearPending(LOGIN_KEY);
-	return result;
-};
-
 const hasHost = (origin: string) =>
 	chrome.permissions.contains({ origins: [pattern(origin)] });
 
+/** Only false if the user withheld site access in the browser settings. */
+const hasAccess = async (appOrigin: string, wikiOrigin: string) =>
+	(await hasHost(appOrigin)) && (await hasHost(wikiOrigin));
+
 /**
- * v3 sync for an app allowed by its certificate: the wiki comes from the
- * certificate and the token goes only to the sender's own origin. Host access
- * is required by the manifest, so there is no PERMISSION_REQUESTED here.
+ * The sync itself, after the sender checks: the wiki comes from the
+ * certificate and the token goes only to the sender's own origin.
  */
-const runCertSync = async (
+const runSync = async (
 	appOrigin: string,
 	wikiOrigin: string,
 	near?: chrome.tabs.Tab
 ): Promise<SyncResult> => {
-	// Only false if the user withheld site access in the browser settings.
-	if (!(await hasHost(appOrigin)) || !(await hasHost(wikiOrigin))) {
-		return fail('NO_PERMISSION');
-	}
+	if (!(await hasAccess(appOrigin, wikiOrigin))) return fail('NO_PERMISSION');
 	const token = await readJwt(wikiOrigin);
-	if (!token) return startLogin(appOrigin, wikiOrigin, 'cert', near);
+	if (!token) return startLogin(appOrigin, wikiOrigin, near);
 	const result = await postToken(appOrigin, token);
 	if (!result.ok && result.code === 'REJECTED') {
-		return startLogin(appOrigin, wikiOrigin, 'cert', near);
+		return startLogin(appOrigin, wikiOrigin, near);
 	}
-	if (result.ok) await clearPending(LOGIN_KEY);
+	if (result.ok) await clearPending();
 	return result;
 };
 
-type Allowed =
-	| { via: 'cert'; appOrigin: string; wikiOrigin: string }
-	| { via: 'config'; config: SyncConfig };
+type Allowed = { appOrigin: string; wikiOrigin: string };
 
 /**
  * Is the sender an allowed web app? Uses `sender.origin`, which the browser
@@ -319,29 +239,19 @@ const allowedApp = async (
 	) {
 		return null;
 	}
-	if (message.cert !== undefined) {
-		const cert = await verifyCert(message.cert);
-		if (cert?.apps.includes(sender.origin)) {
-			return { via: 'cert', appOrigin: sender.origin, wikiOrigin: cert.wiki };
-		}
-	}
-	const config = await getConfig();
-	if (config && sender.origin === config.appOrigin) {
-		return { via: 'config', config };
-	}
-	return null;
+	const cert = await verifyCert(message.cert);
+	if (!cert?.apps.includes(sender.origin)) return null;
+	return { appOrigin: sender.origin, wikiOrigin: cert.wiki };
 };
 
 const handleSync = async (
-	message: { wikiUrl?: unknown; cert?: unknown },
+	message: { cert?: unknown },
 	sender: chrome.runtime.MessageSender
 ): Promise<SyncResult | null> => {
 	// An error while checking must not answer an unverified page (not even FAILED).
 	const app = await allowedApp(message, sender).catch(() => null);
 	if (!app) return null;
-	return app.via === 'cert'
-		? runCertSync(app.appOrigin, app.wikiOrigin, sender.tab)
-		: runSync(app.config, message.wikiUrl, sender.tab);
+	return runSync(app.appOrigin, app.wikiOrigin, sender.tab);
 };
 
 /** Does a cookie apply to the wiki origin's host? */
@@ -353,68 +263,23 @@ const cookieMatches = (cookie: chrome.cookies.Cookie, wikiOrigin: string) => {
 
 /** A `jwt` cookie was set: finish a pending login. */
 const onJwtCookie = async (cookie: chrome.cookies.Cookie) => {
-	const p = await getPending(LOGIN_KEY);
+	const p = await getPending();
 	if (!p || !cookieMatches(cookie, p.wikiOrigin)) return;
-
-	if (p.via === 'cert') {
-		// The certificate was checked when the login started.
-		if (!(await hasHost(p.appOrigin)) || !(await hasHost(p.wikiOrigin))) {
-			await clearPending(LOGIN_KEY);
-			await broadcast(p.appOrigin, fail('NO_PERMISSION'));
-			return;
-		}
-		await finishLogin(p.appOrigin, p.wikiOrigin);
+	// The certificate was checked when the login started.
+	if (!(await hasAccess(p.appOrigin, p.wikiOrigin))) {
+		await clearPending();
+		await broadcast(p.appOrigin, fail('NO_PERMISSION'));
 		return;
 	}
-
-	const config = await getConfig();
-	if (!config || config.appOrigin !== p.appOrigin) {
-		await clearPending(LOGIN_KEY); // configuration changed meanwhile
-		return;
-	}
-	if (
-		!(await hasAppPermission(config)) ||
-		!(await isWikiGranted(config, p.wikiOrigin))
-	) {
-		await clearPending(LOGIN_KEY);
-		await broadcast(config.appOrigin, fail('NO_PERMISSION'));
-		return;
-	}
-	await finishLogin(config.appOrigin, p.wikiOrigin);
-};
-
-/** POST the new wiki session of a pending login and push the result. */
-const finishLogin = async (appOrigin: string, wikiOrigin: string) => {
 	// Read through cookies.get so the cookie that applies to the wiki URL wins.
-	const token = await readJwt(wikiOrigin);
+	const token = await readJwt(p.wikiOrigin);
 	if (!token) return;
-	const result = await postToken(appOrigin, token);
+	const result = await postToken(p.appOrigin, token);
 	// Still rejected (e.g. a cookie set before the user finished logging in):
 	// keep waiting for the next cookie until the pending login expires.
 	if (!result.ok && result.code === 'REJECTED') return;
-	await clearPending(LOGIN_KEY);
-	await broadcast(appOrigin, result);
-};
-
-/** The user may have just allowed a requested wiki origin: run that sync. */
-const resumePermission = async () => {
-	const p = await getPending(PERMISSION_KEY);
-	if (!p) return;
-	const config = await getConfig();
-	if (!config || config.appOrigin !== p.appOrigin) {
-		await clearPending(PERMISSION_KEY);
-		return;
-	}
-	if (
-		!(await hasAppPermission(config)) ||
-		!(await isWikiGranted(config, p.wikiOrigin))
-	) {
-		return; // not allowed (yet)
-	}
-	await clearPending(PERMISSION_KEY);
-	// Broadcast every result, including LOGIN_STARTED (a login tab opened; the
-	// login flow sends another `synced` when it finishes).
-	await broadcast(config.appOrigin, await runSync(config, p.wikiOrigin));
+	await clearPending();
+	await broadcast(p.appOrigin, result);
 };
 
 export const initSessionSync = () => {
@@ -437,23 +302,12 @@ export const initSessionSync = () => {
 		serial(() => onJwtCookie(cookie)).catch(() => {});
 	});
 
-	const resume = () => {
-		serial(resumePermission).catch(() => {});
-	};
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === 'local' && isConfigChange(changes)) resume();
-	});
-
-	// Keep the dynamic content script in line with the stored config and the
-	// granted permissions.
+	// Keep the dynamic content script registered.
 	const resync = () => {
 		syncContentScript().catch(() => {});
 	};
 	chrome.runtime.onInstalled.addListener(resync);
 	chrome.runtime.onStartup.addListener(resync);
 	chrome.permissions.onRemoved.addListener(resync);
-	chrome.permissions.onAdded.addListener(() => {
-		resync();
-		resume();
-	});
+	chrome.permissions.onAdded.addListener(resync);
 };

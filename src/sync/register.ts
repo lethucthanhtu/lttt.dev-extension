@@ -11,8 +11,8 @@ const SCRIPT_ID = 'wikijs-session-sync';
 /**
  * Sites the content script runs on: every site a web app can live on (the
  * required host permissions). It stays silent unless the background confirms
- * that the page is an allowed web app (signed certificate, or the app
- * configured in Options), so other sites cannot detect the extension.
+ * that the page is an allowed web app (signed certificate), so other sites
+ * cannot detect the extension.
  */
 const MATCHES = ['https://*/*', 'http://localhost/*'];
 
