@@ -9,7 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
-release
+# release/ is committed: the prebuilt zip users download
 dist-ssr
 *.local
 
