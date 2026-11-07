@@ -85,24 +85,56 @@ _Coming soon..._
 
 ## 🔐 Wiki.js session sync (optional)
 
-Lets a web app sign you in with your existing Wiki.js session, without you copying any token. Nothing is hard-coded: you enter both URLs in the extension options, and the extension asks for access to exactly those two sites.
+Lets a web app sign you in with your existing Wiki.js session, without you copying any token. Nothing is hard-coded: you enter the web app URL in the extension options, and the extension asks for access only to the sites you allow.
 
 ### How it works
 
-1. In **Options** (right-click the extension icon → **Options**), enter the **Wiki.js URL** (e.g. `https://wiki.example.com`) and the **Web app URL** (e.g. `https://app.example.com`), then click **Save**. Chrome asks you to allow access to those two sites.
+1. In **Options** (right-click the extension icon → **Options**), enter the **Web app URL** (e.g. `https://app.example.com`), then click **Save**. Chrome asks you to allow access to that site.
+   - The **Wiki.js URL** (e.g. `https://wiki.example.com`) is optional. If you leave it empty, the web app asks for its wiki when it needs it (see "Protocol" below).
+   - Allowed wikis are listed under **Allowed wikis**, each with a **Remove** button.
    - URLs must be `https://…`. For local development, `http://localhost:<port>` is also accepted.
-   - Only the two origins are saved, in `chrome.storage.local`. No token is stored.
+   - Only origins are saved, in `chrome.storage.local`. No token is stored.
 2. The extension then registers a small content script that runs **only on the web app's origin**. On every other site it does nothing, so other sites cannot detect the extension.
-3. The web app detects the extension with `window.postMessage` (`{source: 'wikijs-session-sync', type: 'ping', id}`), and the content script replies with `pong`. When you start a sync in the web app (`type: 'sync'`), the background service worker does the following:
+3. When you start a sync in the web app, the background service worker:
    - checks that the request came from the top frame of a tab on the configured web app;
-   - reads the Wiki.js session cookie (`jwt`) for the Wiki.js origin;
-   - sends it with `POST <web app>/api/auth/token`, using the body `{"token": "…"}` and `credentials: 'include'`;
-   - reports `ok`, or one of these codes: `NOT_CONFIGURED`, `NO_PERMISSION`, `NOT_LOGGED_IN`, `REJECTED`, `APP_FORBIDDEN`, `FORBIDDEN_ORIGIN` or `FAILED`.
+   - reads the Wiki.js session cookie (`jwt`), but only for a wiki origin you allowed;
+   - sends it with `POST <web app>/api/auth/token`, using the body `{"token": "…"}` and `credentials: 'include'`.
 
    The token is never sent to the page and never logged.
-4. **Disable** in Options removes the settings, the content script and the site permissions.
+4. **Disable** in Options removes the settings, the content script and all site permissions. Changing the web app URL drops the wikis allowed for the previous app.
 
 Wiki.js may renew its session (a new `jwt`). The web app's server handles renewal itself; the extension does nothing extra.
+
+### Protocol (v2)
+
+All messages use `window.postMessage(…, location.origin)` on the web app page. The page sends `source: 'wikijs-session-sync'`; the extension replies with `source: 'wikijs-session-sync-ext'`.
+
+| Page → extension | Extension → page |
+| --- | --- |
+| `{type:'ping', id}` | `{type:'pong', id, version: 2, extVersion: '1.2.0'}` |
+| `{type:'sync', id, wikiUrl}` | `{type:'result', id, ok, code?}` |
+| — | `{type:'synced', ok, code?}` (unsolicited, no `id`) |
+
+`wikiUrl` is the wiki the page wants to use. Only its origin is used (any path is ignored). Result codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NOT_CONFIGURED` | No web app is configured. |
+| `NO_PERMISSION` | Access to the web app (or, for v1 pages, the wiki) is missing. |
+| `INVALID_WIKI_URL` | `wikiUrl` is not a string, not `https://` (or `http://localhost`), or has credentials. |
+| `PERMISSION_REQUESTED` | The wiki origin is not allowed yet. The options page opens with that wiki prefilled. Once you click **Save** and allow it, the sync runs and its result arrives as `synced` (this can be `LOGIN_STARTED`, followed later by the login result). |
+| `LOGIN_STARTED` | No `jwt` cookie, or the app rejected it. The wiki's `/login` page opens in a new tab. When a new `jwt` cookie appears within 10 minutes, it is POSTed and the result arrives as `synced`. |
+| `REJECTED` | The app rejected the token (v1 pages only; v2 starts a login instead). |
+| `NOT_LOGGED_IN` | No `jwt` cookie (v1 pages only). |
+| `APP_FORBIDDEN` | The app does not accept this extension's ID (`EXTENSION_ORIGINS`). |
+| `FORBIDDEN_ORIGIN` | The request did not come from the top frame of the configured web app. |
+| `FAILED` | Network error, timeout (15 s) or unexpected response. |
+
+- `synced` is sent to every open tab of the web app.
+- There is at most one pending login and one pending permission request, each with at most one tab. A second `sync` while one is pending reuses that tab (it is focused, and pointed at the new wiki if it differs) and returns the same code.
+- The token `POST` never follows redirects: a redirect response gives `FAILED`.
+- No `synced` is sent if the 10-minute login wait expires; the page should time out on its own.
+- A page that sends no `wikiUrl` (protocol v1) uses the first allowed wiki and gets the v1 codes (`NO_PERMISSION`, `NOT_LOGGED_IN`, `REJECTED`) without any tab being opened.
 
 ### Stable extension ID (`key`)
 
@@ -133,18 +165,25 @@ Prerequisites:
 
 1. Run `npm run build` with `EXTENSION_PUBLIC_KEY` set, then load `dist/` unpacked. Confirm the ID in `chrome://extensions`.
 2. Before configuring: open the web app. It should **not** detect the extension (no `pong`).
-3. Open **Options**, enter the Wiki.js URL and the web app URL, click **Save** and allow access. The page should say "Saved…".
-4. Reload the web app tab. It should now detect the extension. Open any other site and check the DevTools console: `window.postMessage({source:'wikijs-session-sync',type:'ping',id:1}, location.origin)` should get no reply.
-5. Logged **out** of Wiki.js, start a sync in the web app. Expect `NOT_LOGGED_IN`.
-6. Log in to Wiki.js, then start a sync again. Expect `ok`, and you should be signed in to the web app.
+3. Open **Options**, enter only the web app URL, click **Save** and allow access. The page should say "Saved…".
+4. Reload the web app tab. It should now detect the extension (`pong` with `version: 2`). Open any other site and check the DevTools console: `window.postMessage({source:'wikijs-session-sync',type:'ping',id:1}, location.origin)` should get no reply.
+5. Permission flow: start a sync in the web app. Expect `PERMISSION_REQUESTED`, and the options page opens with the Wiki.js URL prefilled and a banner.
+   - Start a sync again: the same options tab is focused (no second tab).
+   - Click **Save** and allow access. The web app should receive `synced` (`ok` if you are logged in to Wiki.js; otherwise `LOGIN_STARTED` and a login tab opens, then a second `synced` after you log in, see step 6).
+6. Login flow: log out of Wiki.js, then start a sync. Expect `LOGIN_STARTED`, and the wiki login page opens in a new tab.
+   - Start a sync again: the same login tab is focused.
+   - Log in. The web app should receive `synced` with `ok`, and you should be signed in.
    - In the service worker's DevTools (chrome://extensions → "service worker"), the `POST /api/auth/token` request should be 200.
    - The web app's session cookie should be stored. Check that this also works with "Block third-party cookies" enabled.
-7. Error paths:
+7. Logged in to Wiki.js, start a sync. Expect `ok` directly, with no tab opened.
+8. Error paths:
+   - a sync with `wikiUrl: 'http://wiki.example.com'` → `INVALID_WIKI_URL`;
    - remove the ID from `EXTENSION_ORIGINS` → `APP_FORBIDDEN`;
+   - remove the wiki under **Allowed wikis** → the next sync returns `PERMISSION_REQUESTED` again;
    - in Options, change the web app URL to a different site → the old app no longer detects the extension;
-   - revoke a site permission in the extension's details page → `NO_PERMISSION`;
+   - revoke the web app's site permission in the extension's details page → `NO_PERMISSION`;
    - click **Disable** → no detection.
-8. Repeat in Edge / Brave / Opera if you use them.
+9. Repeat in Edge / Brave / Opera if you use them.
 
 Note: `npm run dev` (the crxjs dev server) makes all extension files web-accessible for HMR, so dev builds *are* detectable by any site. Test detection only with `npm run build`.
 

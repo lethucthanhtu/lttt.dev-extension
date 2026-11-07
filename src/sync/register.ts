@@ -5,7 +5,7 @@
  * (which would let any site detect the extension).
  */
 import contentScript from '../content/sync.ts?script&iife';
-import { getConfig, hasPermissions } from './config';
+import { getConfig, hasAppPermission } from './config';
 
 const SCRIPT_ID = 'wikijs-session-sync';
 
@@ -21,7 +21,7 @@ export const syncContentScript = async (): Promise<void> => {
 		await chrome.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] });
 	}
 	const c = await getConfig();
-	if (!c || !(await hasPermissions(c))) return;
+	if (!c || !(await hasAppPermission(c))) return;
 	await chrome.scripting.registerContentScripts([
 		{
 			id: SCRIPT_ID,

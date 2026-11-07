@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
 	clearConfig,
 	getConfig,
-	hasPermissions,
 	originPatterns,
+	pattern,
 	setConfig,
 	toOrigin,
 	type SyncConfig,
@@ -16,67 +16,130 @@ type Status =
 	| { kind: 'ok'; message: string }
 	| { kind: 'error'; message: string };
 
-const URL_HINT = 'Use https://…, or http://localhost:<port> for local development.';
+type WikiRow = { origin: string; granted: boolean };
+
+const URL_HINT =
+	'Use https://…, or http://localhost:<port> for local development.';
+
+/** Wiki origin the web app asked for (`?wiki=`, set by PERMISSION_REQUESTED). */
+const requestedWiki = toOrigin(
+	new URLSearchParams(location.search).get('wiki')
+);
+
+const granted = (origin: string) =>
+	chrome.permissions.contains({ origins: [pattern(origin)] });
+
+/** All origins of a config. */
+const allOrigins = (c: SyncConfig) => [c.appOrigin, ...c.wikiOrigins];
+
+/** Remove host permissions, keeping any that are still in use. */
+const dropPermissions = (origins: string[], keep: string[]) => {
+	const drop = origins.filter((o) => !keep.includes(o));
+	return drop.length
+		? chrome.permissions
+				.remove({ origins: drop.map(pattern) })
+				.catch(() => false)
+		: Promise.resolve(true);
+};
 
 /**
- * Options page: configure the Wiki.js URL and the web app URL for the Wiki.js
- * session sync, and grant host permissions for exactly those two origins.
+ * Options page: configure the web app URL (required) and the Wiki.js origins
+ * the extension may read the session cookie from (optional; the web app can
+ * also ask for one, which opens this page with `?wiki=` prefilled).
  */
 function App() {
-	const [wikiUrl, setWikiUrl] = useState('');
+	const [config, setConfigState] = useState<SyncConfig | null>(null);
+	const [wikis, setWikis] = useState<WikiRow[]>([]);
 	const [appUrl, setAppUrl] = useState('');
+	const [wikiUrl, setWikiUrl] = useState(requestedWiki ?? '');
 	const [status, setStatus] = useState<Status>({ kind: 'idle' });
+
+	const refresh = async () => {
+		const c = await getConfig();
+		setConfigState(c);
+		setWikis(
+			c
+				? await Promise.all(
+						c.wikiOrigins.map(async (origin) => ({
+							origin,
+							granted: await granted(origin),
+						}))
+					)
+				: []
+		);
+		return c;
+	};
 
 	useEffect(() => {
 		(async () => {
-			const c = await getConfig();
+			const c = await refresh();
 			if (!c) return;
-			setWikiUrl(c.wikiOrigin);
 			setAppUrl(c.appOrigin);
-			setStatus(
-				(await hasPermissions(c))
-					? { kind: 'ok', message: 'Configured and permissions granted.' }
-					: {
-							kind: 'error',
-							message: 'Permissions are missing. Click Save to grant them again.',
-						}
-			);
+			if (!(await granted(c.appOrigin))) {
+				setStatus({
+					kind: 'error',
+					message:
+						'Access to the web app is missing. Click Save to grant it again.',
+				});
+			}
 		})();
 	}, []);
 
 	const onSubmit = (e: FormEvent) => {
 		e.preventDefault();
-		const wikiOrigin = toOrigin(wikiUrl);
 		const appOrigin = toOrigin(appUrl);
-		if (!wikiOrigin || !appOrigin) {
+		const wikiOrigin = wikiUrl.trim() ? toOrigin(wikiUrl) : null;
+		if (!appOrigin || (wikiUrl.trim() && !wikiOrigin)) {
 			setStatus({
 				kind: 'error',
-				message: `Invalid ${!wikiOrigin ? 'Wiki.js' : 'web app'} URL. ${URL_HINT}`,
+				message: `Invalid ${!appOrigin ? 'web app' : 'Wiki.js'} URL. ${URL_HINT}`,
 			});
 			return;
 		}
-		const config: SyncConfig = { wikiOrigin, appOrigin };
+		const origins = [appOrigin, ...(wikiOrigin ? [wikiOrigin] : [])];
 		setStatus({ kind: 'saving' });
 
 		// Must be called synchronously inside the click handler (user gesture).
 		chrome.permissions
-			.request({ origins: originPatterns(config) })
-			.then(async (granted) => {
-				await setConfig(config);
+			.request({ origins: origins.map(pattern) })
+			.then(async (ok) => {
+				if (!ok) {
+					// Keep the current settings (do not switch apps or drop wikis).
+					setStatus({
+						kind: 'error',
+						message:
+							'Access to these sites was not granted, so nothing was changed. Click Save again to allow it.',
+					});
+					return;
+				}
+				const previous = await getConfig();
+				const appChanged = previous?.appOrigin !== appOrigin;
+				// Wikis allowed for another app are not carried over to a new one.
+				const kept = appChanged ? [] : (previous?.wikiOrigins ?? []);
+				const next: SyncConfig = {
+					appOrigin,
+					wikiOrigins: wikiOrigin ? [...kept, wikiOrigin] : kept,
+				};
+				await setConfig(next);
 				await syncContentScript();
-				setWikiUrl(wikiOrigin);
+				if (previous && appChanged) {
+					await dropPermissions(allOrigins(previous), origins);
+				}
+				await refresh();
 				setAppUrl(appOrigin);
+				setWikiUrl('');
 				setStatus(
-					granted
+					requestedWiki && wikiOrigin === requestedWiki
 						? {
 								kind: 'ok',
 								message:
-									'Saved. Reload the web app tab so it can detect the extension.',
+									'Allowed. The web app will finish signing in; you can close this tab.',
 							}
 						: {
-								kind: 'error',
-								message:
-									'Saved, but access to these sites was not granted, so sync stays off. Click Save again to allow it.',
+								kind: 'ok',
+								message: appChanged
+									? 'Saved. Reload the web app tab so it can detect the extension.'
+									: 'Saved.',
 							}
 				);
 			})
@@ -85,19 +148,41 @@ function App() {
 			);
 	};
 
-	const onReset = async () => {
+	const onRemoveWiki = async (origin: string) => {
+		const c = await getConfig();
+		if (!c) return;
+		await setConfig({
+			...c,
+			wikiOrigins: c.wikiOrigins.filter((o) => o !== origin),
+		});
+		await dropPermissions([origin], [c.appOrigin]);
+		await refresh();
+		setStatus({ kind: 'ok', message: `Removed ${origin}.` });
+	};
+
+	const onDisable = async () => {
 		const c = await getConfig();
 		await clearConfig();
 		await syncContentScript();
-		if (c) await chrome.permissions.remove({ origins: originPatterns(c) }).catch(() => {});
-		setWikiUrl('');
+		if (c)
+			await chrome.permissions
+				.remove({ origins: originPatterns(c) })
+				.catch(() => {});
+		await refresh();
 		setAppUrl('');
-		setStatus({ kind: 'ok', message: 'Sync disabled and permissions removed.' });
+		setWikiUrl('');
+		setStatus({
+			kind: 'ok',
+			message: 'Sync disabled and permissions removed.',
+		});
 	};
 
 	const saving = status.kind === 'saving';
 	const input =
 		'rounded-md border border-gray-300 px-3 py-2 font-mono text-sm focus:border-gray-500 focus:outline-none';
+	const showRequest =
+		requestedWiki &&
+		!wikis.some((w) => w.origin === requestedWiki && w.granted);
 
 	return (
 		<main className='mx-auto max-w-lg p-6 font-sans text-gray-800'>
@@ -110,20 +195,22 @@ function App() {
 				shown to the page.
 			</p>
 
+			{showRequest && (
+				<p className='mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm'>
+					{config ? (
+						<>
+							The web app <span className='font-mono'>{config.appOrigin}</span>{' '}
+							asked to use your session on{' '}
+						</>
+					) : (
+						<>A web app asked to use your session on </>
+					)}
+					<span className='font-mono'>{requestedWiki}</span>. Click{' '}
+					<strong>Save</strong> to allow it, or close this tab to refuse.
+				</p>
+			)}
+
 			<form className='mt-4 flex flex-col gap-3' onSubmit={onSubmit}>
-				<label className='text-sm font-medium' htmlFor='wiki-url'>
-					Wiki.js URL
-				</label>
-				<input
-					id='wiki-url'
-					type='url'
-					placeholder='https://wiki.example.com'
-					className={input}
-					value={wikiUrl}
-					onChange={(e) => setWikiUrl(e.target.value)}
-					disabled={saving}
-					required
-				/>
 				<label className='text-sm font-medium' htmlFor='app-url'>
 					Web app URL
 				</label>
@@ -137,7 +224,23 @@ function App() {
 					disabled={saving}
 					required
 				/>
-				<p className='text-xs text-gray-500'>{URL_HINT}</p>
+				<label className='text-sm font-medium' htmlFor='wiki-url'>
+					Wiki.js URL{' '}
+					<span className='font-normal text-gray-500'>(optional)</span>
+				</label>
+				<input
+					id='wiki-url'
+					type='url'
+					placeholder='https://wiki.example.com'
+					className={input}
+					value={wikiUrl}
+					onChange={(e) => setWikiUrl(e.target.value)}
+					disabled={saving}
+				/>
+				<p className='text-xs text-gray-500'>
+					{URL_HINT} You can leave the Wiki.js URL empty: the web app asks for
+					its wiki when needed.
+				</p>
 				<div className='flex gap-2'>
 					<button
 						type='submit'
@@ -149,7 +252,7 @@ function App() {
 					<button
 						type='button'
 						className='rounded-md border border-gray-300 px-4 py-2 text-sm disabled:opacity-50'
-						onClick={onReset}
+						onClick={onDisable}
 						disabled={saving}
 					>
 						Disable
@@ -157,9 +260,44 @@ function App() {
 				</div>
 			</form>
 
+			{wikis.length > 0 && (
+				<section className='mt-6'>
+					<h2 className='text-sm font-medium'>Allowed wikis</h2>
+					<ul className='mt-2 flex flex-col gap-2'>
+						{wikis.map((w) => (
+							<li
+								key={w.origin}
+								className='flex items-center justify-between gap-2 text-sm'
+							>
+								<span className='font-mono'>
+									{w.origin}
+									{!w.granted && (
+										<span className='ml-2 font-sans text-red-700'>
+											(access missing)
+										</span>
+									)}
+								</span>
+								<button
+									type='button'
+									className='rounded-md border border-gray-300 px-2 py-1 text-xs disabled:opacity-50'
+									onClick={() => onRemoveWiki(w.origin)}
+									disabled={saving}
+								>
+									Remove
+								</button>
+							</li>
+						))}
+					</ul>
+				</section>
+			)}
+
 			<div aria-live='polite' className='mt-4 text-sm'>
-				{status.kind === 'ok' && <p className='text-green-700'>{status.message}</p>}
-				{status.kind === 'error' && <p className='text-red-700'>{status.message}</p>}
+				{status.kind === 'ok' && (
+					<p className='text-green-700'>{status.message}</p>
+				)}
+				{status.kind === 'error' && (
+					<p className='text-red-700'>{status.message}</p>
+				)}
 			</div>
 		</main>
 	);
