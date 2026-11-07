@@ -1,7 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-// import "./index.css";
+import Consent from './Consent';
+import '../tailwind.css';
 
 createRoot(document.getElementById('root')!).render(
-	<StrictMode>{/* <App /> */}</StrictMode>
+	<StrictMode>
+		<Consent />
+	</StrictMode>
 );

@@ -1,40 +1,52 @@
 /**
- * Wiki.js session sync — content script. Registered dynamically on every
- * https site and on localhost (see src/sync/register.ts).
+ * Bridge — content script. Registered dynamically on https://*.lttt.dev only
+ * (see src/bridge/register.ts).
  *
  * It stays silent unless the background confirms that this page is an allowed
  * web app: a page with a valid signed certificate listing its origin. The
  * background decides from the browser-provided sender origin, never from what
- * the page claims. So other
- * sites cannot detect the extension. The Wiki.js token never passes through
- * this script: the background reads the cookie and sends it straight to the
- * web app.
+ * the page claims, so other sites cannot detect the extension.
+ *
+ * Page → extension (window.postMessage, target location.origin):
+ *   { source: 'lttt-bridge', type: 'ping', id, cert }
+ *   { source: 'lttt-bridge', type: 'request', id, cert, request }
+ * Extension → page:
+ *   { source: 'lttt-bridge-ext', type: 'pong', id, version, extVersion }
+ *   { source: 'lttt-bridge-ext', type: 'result', id, ok, data? | code? }
+ *   { source: 'lttt-bridge-ext', type: 'pending', id, code }
+ *     (a `result` with the same id follows later)
  */
 import {
 	EXT_SOURCE,
 	MAX_CERT_LENGTH,
 	PAGE_SOURCE,
 	PROTOCOL_VERSION,
+	RUNTIME_DELIVER,
 	RUNTIME_PING,
-	RUNTIME_SYNC,
-	RUNTIME_SYNCED,
-	type SyncResult,
-} from '../sync/config';
+	RUNTIME_REQUEST,
+	type Reply,
+} from '../bridge/config';
 
-/** Set once the background accepted this page; only then are results relayed. */
+/** Set once the background accepted this page; only then are replies relayed. */
 let allowed = false;
 
 const post = (payload: Record<string, unknown>) =>
 	window.postMessage({ source: EXT_SOURCE, ...payload }, location.origin);
 
-const resultFields = (r: SyncResult) =>
-	r.ok ? { ok: true } : { ok: false, code: r.code };
+const postReply = (id: string | number, reply: Reply) => {
+	if (reply.kind === 'pending') {
+		post({ type: 'pending', id, code: reply.code });
+	} else {
+		post({ type: 'result', id, ...reply.result });
+	}
+};
 
 /** Ask the background. `undefined` = not an allowed page (or no extension). */
 const ask = async <T>(message: Record<string, unknown>) => {
 	try {
 		return ((await chrome.runtime.sendMessage(message)) ?? undefined) as
-			T | undefined;
+			| T
+			| undefined;
 	} catch {
 		// e.g. extension reloaded and this context was invalidated
 		return undefined;
@@ -45,9 +57,9 @@ window.addEventListener('message', async (event: MessageEvent) => {
 	if (event.source !== window || event.origin !== location.origin) return;
 	const data = event.data;
 	if (!data || typeof data !== 'object' || data.source !== PAGE_SOURCE) return;
-	const { type, id, cert } = data as Record<string, unknown>;
+	const { type, id, cert, request } = data as Record<string, unknown>;
 	if (typeof id !== 'string' && typeof id !== 'number') return;
-	if (type !== 'ping' && type !== 'sync') return;
+	if (type !== 'ping' && type !== 'request') return;
 	// Without a usable certificate the page cannot be allowed: no reply.
 	if (typeof cert !== 'string' || !cert || cert.length > MAX_CERT_LENGTH) {
 		return;
@@ -66,21 +78,24 @@ window.addEventListener('message', async (event: MessageEvent) => {
 		return;
 	}
 
-	// The wiki is the certificate's; a `wikiUrl` from the page is ignored.
-	const result = await ask<SyncResult>({ type: RUNTIME_SYNC, cert });
-	if (result) {
+	// The background validates `request` (it comes from the page).
+	const reply = await ask<Reply>({ type: RUNTIME_REQUEST, id, cert, request });
+	if (reply) {
 		allowed = true;
-		post({ type: 'result', id, ...resultFields(result) });
+		postReply(id, reply);
 	} else if (allowed) {
 		// Allowed before, so the extension failed (e.g. it was reloaded).
 		post({ type: 'result', id, ok: false, code: 'FAILED' });
 	}
 });
 
-// Deferred results (after the user logged in to the wiki), pushed by the background to every tab of the app.
+// Deferred replies (after consent or login), sent by the background to the
+// tab that asked.
 chrome.runtime.onMessage.addListener((message, sender) => {
 	if (sender.id !== chrome.runtime.id || sender.tab) return;
-	if (message?.type !== RUNTIME_SYNCED || !message.result) return;
+	if (message?.type !== RUNTIME_DELIVER || !message.reply) return;
 	if (!allowed || message.appOrigin !== location.origin) return;
-	post({ type: 'synced', ...resultFields(message.result as SyncResult) });
+	const { id } = message;
+	if (typeof id !== 'string' && typeof id !== 'number') return;
+	postReply(id, message.reply as Reply);
 });

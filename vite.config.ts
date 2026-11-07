@@ -1,44 +1,45 @@
 import path from 'node:path';
 import { crx } from '@crxjs/vite-plugin';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { build as esbuild } from 'esbuild';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import zip from 'vite-plugin-zip-pack';
 import manifest from './manifest.config.js';
 import { name } from './package.json';
-import tailwindcss from '@tailwindcss/vite';
 
 /**
- * crxjs lists `?script` files in web_accessible_resources for every site.
- * Scripts injected via chrome.scripting.registerContentScripts do not need
- * that, and exposing them lets any page detect the extension by fetching
- * chrome-extension://<id>/<file>. Strip those entries from the final manifest.
+ * Build the bridge content script as one self-contained IIFE file,
+ * emitted at CONTENT_SCRIPT and registered at runtime (src/bridge/register.ts).
+ * crxjs' `?script` import would split shared modules into chunks loaded via
+ * web_accessible_resources, which lets any page detect the extension by
+ * fetching chrome-extension://<id>/<file>. This file is not web accessible.
  */
-const PRIVATE_SCRIPTS = ['src/content/sync.js'];
-const stripWebAccessible = (): Plugin & {
-	renderCrxManifest: (
-		m: chrome.runtime.ManifestV3
-	) => chrome.runtime.ManifestV3;
-} => ({
-	name: 'strip-web-accessible-dynamic-scripts',
+const CONTENT_SCRIPT = 'src/content/bridge.js';
+const contentScript = (): Plugin => ({
+	name: 'bridge-content-script',
 	apply: 'build',
-	enforce: 'post',
-	// crxjs plugin hook, runs on the final manifest
-	renderCrxManifest(manifest) {
-		const war = (manifest.web_accessible_resources ?? [])
-			.map((e) => ({
-				...e,
-				resources: e.resources.filter((r) => !PRIVATE_SCRIPTS.includes(r)),
-			}))
-			.filter((e) => e.resources.length);
-		if (war.length) manifest.web_accessible_resources = war;
-		else delete manifest.web_accessible_resources;
-		return manifest;
+	async generateBundle() {
+		const result = await esbuild({
+			entryPoints: [path.resolve(__dirname, 'src/content/bridge.ts')],
+			bundle: true,
+			format: 'iife',
+			target: 'chrome120',
+			minify: true,
+			write: false,
+			logLevel: 'silent',
+		});
+		this.emitFile({
+			type: 'asset',
+			fileName: CONTENT_SCRIPT,
+			source: result.outputFiles[0].text,
+		});
 	},
 });
 
 export default defineConfig(({ mode }) => ({
-	// Public key that verifies web app certificates (protocol v3). Empty = the
-	// default key in src/sync/cert.ts. Forks set EXTENSION_SIGNING_PUBLIC_KEY
+	// Public key that verifies web app certificates (bridge). Empty = the
+	// default key in src/bridge/cert.ts. Forks set EXTENSION_SIGNING_PUBLIC_KEY
 	// (base64 SPKI DER, ECDSA P-256) to use their own signing key.
 	define: {
 		__SIGNING_PUBLIC_KEY__: JSON.stringify(
@@ -49,6 +50,14 @@ export default defineConfig(({ mode }) => ({
 			).EXTENSION_SIGNING_PUBLIC_KEY?.trim() ?? ''
 		),
 	},
+	build: {
+		rollupOptions: {
+			// Extension pages not referenced by the manifest.
+			input: {
+				consent: path.resolve(__dirname, 'src/consent/index.html'),
+			},
+		},
+	},
 	resolve: {
 		alias: {
 			'@': `${path.resolve(__dirname, 'src')}`,
@@ -56,10 +65,10 @@ export default defineConfig(({ mode }) => ({
 	},
 	plugins: [
 		react(),
-		crx({ manifest }),
-		stripWebAccessible(),
-		zip({ outDir: 'release', outFileName: `${name}.zip` }),
 		tailwindcss(),
+		crx({ manifest }),
+		contentScript(),
+		zip({ outDir: 'release', outFileName: `${name}.zip` }),
 	],
 	server: {
 		cors: {

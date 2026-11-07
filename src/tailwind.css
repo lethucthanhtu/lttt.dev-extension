@@ -1,0 +1,10 @@
+/* Only the extension pages use Tailwind; the content script has no CSS. */
+@import 'tailwindcss' source(none);
+@source './consent';
+@source './options';
+
+@layer base {
+	html {
+		color-scheme: light dark;
+	}
+}

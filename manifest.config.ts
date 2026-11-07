@@ -28,26 +28,25 @@ export default defineManifest(({ mode }) => {
 			'activeTab',
 			'scripting',
 			'clipboardWrite',
-			// Wiki.js session sync
+			// Bridge
 			'cookies',
-			'storage', // chrome.storage.session: pending login (no tokens)
+			'storage', // local: per-site decisions; session: pending requests (no data)
 		],
 		// Short links: the service worker calls the lttt.dev API with the user's
 		// cookies. Without this, CORS blocks it ("Failed to shorten URL"); the old
 		// static content script on https://*/* used to grant it implicitly.
-		// Wiki.js session sync (v3): any https site (or localhost) may be a web
-		// app with a signed certificate, and its wiki may be any https origin, so
-		// access to all sites is required for zero-setup detection. No app or wiki
-		// host is hard-coded; see README → "Protocol (v3)".
-		host_permissions: [
-			'https://lttt.dev/*',
-			'https://*/*',
-			'http://localhost/*',
-		],
+		// Bridge (v5): web apps live on https://*.lttt.dev, but the site they
+		// read from (named in each request, approved by the user once per app
+		// and site) may be any https origin, so reading its cookies or fetching
+		// it with the user's session needs access to all https sites. The
+		// content script itself runs only on *.lttt.dev.
+		host_permissions: ['https://lttt.dev/*', 'https://*/*'],
 		// No static content scripts: they force web_accessible_resources on every
-		// site, which lets any page detect the extension. The session sync
-		// content script is registered at runtime (src/sync/register.ts) and
+		// site, which lets any page detect the extension. The bridge content
+		// script is registered at runtime (src/bridge/register.ts) and
 		// stays silent unless the page proves it is an allowed web app.
+		// Lists and revokes the per-site decisions of the bridge.
+		options_ui: { page: 'src/options/index.html', open_in_tab: true },
 		background: {
 			service_worker: 'src/background.ts',
 			type: 'module',

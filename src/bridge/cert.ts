@@ -1,22 +1,24 @@
 /**
- * Wiki.js session sync — web app certificates (protocol v3).
+ * Bridge — web app certificates.
  *
- * A web app proves it may use the sync by sending a certificate signed with a
- * private key that never enters this repo:
+ * The certificate is only a key: it proves that a web app may talk to the
+ * extension. It says nothing about which sites the app may read (each request
+ * names its source, and the user approves it). Signed with a private key that
+ * never enters this repo:
  *
  *   cert = base64url(payload JSON) + "." + base64url(signature)
- *   payload = { "v": 1, "apps": ["https://app.example.com", …], "wiki": "https://wiki.example.com" }
+ *   payload = { "v": 4, "apps": ["https://app.lttt.dev", "https://*.lttt.dev", …] }
  *
- * Version 2 also accepts wildcard entries in `apps`, `https://*.example.com`:
- * any https origin on the default port whose host is a subdomain of
- * example.com (at any depth, not example.com itself). The base domain needs
- * at least two labels, so `https://*.com` is rejected.
+ * Every app must be on APP_DOMAIN (config.ts): an exact origin
+ * `https://<sub>.lttt.dev`, or a wildcard `https://*.lttt.dev` /
+ * `https://*.<sub>.lttt.dev` matching subdomains at any depth on the default
+ * port. One invalid entry invalidates the whole certificate.
  *
  * The signature is ECDSA P-256 / SHA-256 in IEEE-P1363 form (64 bytes, r||s)
  * over the ASCII bytes of the first part. Only the background verifies certs;
  * the caller must still check the sender's origin with `certAllows`.
  */
-import { MAX_CERT_LENGTH, toOrigin } from './config';
+import { APP_DOMAIN, MAX_CERT_LENGTH, isAppOrigin, toOrigin } from './config';
 
 declare const __SIGNING_PUBLIC_KEY__: string;
 
@@ -32,18 +34,19 @@ const MAX_CACHED = 64;
 export type AppCert = {
 	/** Exact app origins. */
 	apps: string[];
-	/** Wildcard base domains (v2): `example.com` for `https://*.example.com`. */
+	/** Wildcard base domains: `lttt.dev` for `https://*.lttt.dev`. */
 	wildcards: string[];
-	wiki: string;
 };
 
 const WILDCARD = /^https:\/\/\*\.([a-z0-9-]+(?:\.[a-z0-9-]+)+)$/;
 
-/** `https://*.example.com` → `example.com`, or null if not a valid wildcard. */
+/** `https://*.lttt.dev` → `lttt.dev`, or null if not a valid app wildcard. */
 const toWildcard = (input: unknown): string | null => {
 	if (typeof input !== 'string') return null;
 	const base = WILDCARD.exec(input.trim().toLowerCase())?.[1];
-	if (!base || /^[0-9]+$/.test(base.split('.').pop()!)) return null;
+	if (!base || (base !== APP_DOMAIN && !base.endsWith(`.${APP_DOMAIN}`))) {
+		return null;
+	}
 	try {
 		// Reject anything the URL parser would rewrite (bad labels, IPs).
 		return new URL(`https://${base}`).hostname === base ? base : null;
@@ -54,18 +57,9 @@ const toWildcard = (input: unknown): string | null => {
 
 /** May the page at `origin` (the browser-provided sender origin) use `cert`? */
 export const certAllows = (cert: AppCert, origin: string): boolean => {
+	if (!isAppOrigin(origin)) return false;
 	if (cert.apps.includes(origin)) return true;
-	if (!cert.wildcards.length) return false;
-	let url: URL;
-	try {
-		url = new URL(origin);
-	} catch {
-		return false;
-	}
-	if (url.protocol !== 'https:' || url.port || url.origin !== origin) {
-		return false;
-	}
-	const host = url.hostname;
+	const host = new URL(origin).hostname;
 	return cert.wildcards.some((base) => host.endsWith(`.${base}`));
 };
 
@@ -108,30 +102,27 @@ const parse = async (cert: string): Promise<AppCert | null> => {
 		new TextDecoder('utf-8', { fatal: true }).decode(fromBase64Url(body))
 	);
 	if (!payload || typeof payload !== 'object') return null;
-	const { v, apps, wiki } = payload as Record<string, unknown>;
+	const { v, apps } = payload as Record<string, unknown>;
 	if (
-		(v !== 1 && v !== 2) ||
+		v !== 4 ||
 		!Array.isArray(apps) ||
 		!apps.length ||
 		apps.length > MAX_APPS
 	) {
 		return null;
 	}
-	const wikiOrigin = toOrigin(wiki);
-	if (!wikiOrigin) return null;
 	const origins: string[] = [];
 	const wildcards: string[] = [];
 	for (const entry of apps) {
-		const base = v === 2 ? toWildcard(entry) : null;
+		const base = toWildcard(entry);
 		const origin = base ? null : toOrigin(entry);
 		if (base) wildcards.push(base);
-		else if (origin) origins.push(origin);
+		else if (origin && isAppOrigin(origin)) origins.push(origin);
 		else return null; // one bad entry invalidates the whole certificate
 	}
 	return {
 		apps: [...new Set(origins)],
 		wildcards: [...new Set(wildcards)],
-		wiki: wikiOrigin,
 	};
 };
 
@@ -139,7 +130,7 @@ const parse = async (cert: string): Promise<AppCert | null> => {
 const cache = new Map<string, Promise<AppCert | null>>();
 
 /**
- * Verify a certificate sent by a page. Returns its apps and wiki, or null if it
+ * Verify a certificate sent by a page. Returns its apps, or null if it
  * is missing, oversized, malformed, badly signed or has an invalid payload.
  */
 export const verifyCert = (cert: unknown): Promise<AppCert | null> => {
