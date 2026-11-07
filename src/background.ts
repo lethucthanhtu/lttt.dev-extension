@@ -1,6 +1,10 @@
 import axios from 'axios';
 import * as utils from './utils';
 import * as api from './api';
+import { initSessionSync } from './sync/background';
+
+// Wiki.js session sync (content script ↔ web app bridge)
+initSessionSync();
 
 // Redirect user to website when click extension icon
 chrome.action.onClicked.addListener(() => { chrome.tabs.create({ url: api.BASE_URL }); });

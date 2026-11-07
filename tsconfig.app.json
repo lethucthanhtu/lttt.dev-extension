@@ -9,7 +9,7 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"paths": { "@/*": ["./src/*"] },
-		"types": ["vite/client", "chrome"],
+		"types": ["vite/client", "chrome", "@crxjs/vite-plugin/client"],
 		"allowImportingTsExtensions": true,
 		"strict": true,
 		"noFallthroughCasesInSwitch": true,
