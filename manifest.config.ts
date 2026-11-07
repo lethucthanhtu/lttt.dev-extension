@@ -32,13 +32,23 @@ export default defineManifest(({ mode }) => {
 			'cookies',
 			'storage',
 		],
-		// Wiki.js session sync: the user grants only the two configured origins
-		// at runtime from the options page; no host is hard-coded here.
-		optional_host_permissions: ['https://*/*', 'http://localhost/*'],
+		// Short links: the service worker calls the lttt.dev API with the user's
+		// cookies. Without this, CORS blocks it ("Failed to shorten URL"); the old
+		// static content script on https://*/* used to grant it implicitly.
+		// Wiki.js session sync (v3): any https site (or localhost) may be a web
+		// app with a signed certificate, and its wiki may be any https origin, so
+		// access to all sites is required for zero-setup detection. No app or wiki
+		// host is hard-coded; see README → "Protocol (v3)".
+		host_permissions: [
+			'https://lttt.dev/*',
+			'https://*/*',
+			'http://localhost/*',
+		],
 		options_ui: { page: 'src/options/index.html', open_in_tab: true },
 		// No static content scripts: they force web_accessible_resources on every
 		// site, which lets any page detect the extension. The session sync
-		// content script is registered at runtime for the configured app only.
+		// content script is registered at runtime (src/sync/register.ts) and
+		// stays silent unless the page proves it is an allowed web app.
 		background: {
 			service_worker: 'src/background.ts',
 			type: 'module',

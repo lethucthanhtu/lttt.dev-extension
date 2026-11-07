@@ -1,11 +1,11 @@
-import path from 'node:path'
-import { crx } from '@crxjs/vite-plugin'
-import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
-import zip from 'vite-plugin-zip-pack'
-import manifest from './manifest.config.js'
-import { name } from './package.json'
-import tailwindcss from "@tailwindcss/vite";
+import path from 'node:path';
+import { crx } from '@crxjs/vite-plugin';
+import react from '@vitejs/plugin-react';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import zip from 'vite-plugin-zip-pack';
+import manifest from './manifest.config.js';
+import { name } from './package.json';
+import tailwindcss from '@tailwindcss/vite';
 
 /**
  * crxjs lists `?script` files in web_accessible_resources for every site.
@@ -15,41 +15,55 @@ import tailwindcss from "@tailwindcss/vite";
  */
 const PRIVATE_SCRIPTS = ['src/content/sync.js'];
 const stripWebAccessible = (): Plugin & {
-  renderCrxManifest: (m: chrome.runtime.ManifestV3) => chrome.runtime.ManifestV3;
+	renderCrxManifest: (
+		m: chrome.runtime.ManifestV3
+	) => chrome.runtime.ManifestV3;
 } => ({
-  name: 'strip-web-accessible-dynamic-scripts',
-  apply: 'build',
-  enforce: 'post',
-  // crxjs plugin hook, runs on the final manifest
-  renderCrxManifest(manifest) {
-    const war = (manifest.web_accessible_resources ?? [])
-      .map((e) => ({
-        ...e,
-        resources: e.resources.filter((r) => !PRIVATE_SCRIPTS.includes(r)),
-      }))
-      .filter((e) => e.resources.length);
-    if (war.length) manifest.web_accessible_resources = war;
-    else delete manifest.web_accessible_resources;
-    return manifest;
-  },
+	name: 'strip-web-accessible-dynamic-scripts',
+	apply: 'build',
+	enforce: 'post',
+	// crxjs plugin hook, runs on the final manifest
+	renderCrxManifest(manifest) {
+		const war = (manifest.web_accessible_resources ?? [])
+			.map((e) => ({
+				...e,
+				resources: e.resources.filter((r) => !PRIVATE_SCRIPTS.includes(r)),
+			}))
+			.filter((e) => e.resources.length);
+		if (war.length) manifest.web_accessible_resources = war;
+		else delete manifest.web_accessible_resources;
+		return manifest;
+	},
 });
 
-export default defineConfig({
-  resolve: {
-    alias: {
-      "@": `${path.resolve(__dirname, "src")}`,
-    },
-  },
-  plugins: [
-    react(),
-    crx({ manifest }),
-    stripWebAccessible(),
-    zip({ outDir: "release", outFileName: `${name}.zip` }),
-    tailwindcss(),
-  ],
-  server: {
-    cors: {
-      origin: [/chrome-extension:\/\//],
-    },
-  },
-});
+export default defineConfig(({ mode }) => ({
+	// Public key that verifies web app certificates (protocol v3). Empty = the
+	// default key in src/sync/cert.ts. Forks set EXTENSION_SIGNING_PUBLIC_KEY
+	// (base64 SPKI DER, ECDSA P-256) to use their own signing key.
+	define: {
+		__SIGNING_PUBLIC_KEY__: JSON.stringify(
+			loadEnv(
+				mode,
+				process.cwd(),
+				'EXTENSION_'
+			).EXTENSION_SIGNING_PUBLIC_KEY?.trim() ?? ''
+		),
+	},
+	resolve: {
+		alias: {
+			'@': `${path.resolve(__dirname, 'src')}`,
+		},
+	},
+	plugins: [
+		react(),
+		crx({ manifest }),
+		stripWebAccessible(),
+		zip({ outDir: 'release', outFileName: `${name}.zip` }),
+		tailwindcss(),
+	],
+	server: {
+		cors: {
+			origin: [/chrome-extension:\/\//],
+		},
+	},
+}));

@@ -5,14 +5,18 @@
  * (which would let any site detect the extension).
  */
 import contentScript from '../content/sync.ts?script&iife';
-import { getConfig, hasAppPermission } from './config';
 
 const SCRIPT_ID = 'wikijs-session-sync';
 
 /**
- * (Re)register the content script for the configured app origin only, or
- * unregister it when there is no config / no permission.
+ * Sites the content script runs on: every site a web app can live on (the
+ * required host permissions). It stays silent unless the background confirms
+ * that the page is an allowed web app (signed certificate, or the app
+ * configured in Options), so other sites cannot detect the extension.
  */
+const MATCHES = ['https://*/*', 'http://localhost/*'];
+
+/** (Re)register the content script. */
 export const syncContentScript = async (): Promise<void> => {
 	const existing = await chrome.scripting.getRegisteredContentScripts({
 		ids: [SCRIPT_ID],
@@ -20,13 +24,11 @@ export const syncContentScript = async (): Promise<void> => {
 	if (existing.length) {
 		await chrome.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] });
 	}
-	const c = await getConfig();
-	if (!c || !(await hasAppPermission(c))) return;
 	await chrome.scripting.registerContentScripts([
 		{
 			id: SCRIPT_ID,
 			js: [contentScript],
-			matches: [`${c.appOrigin}/*`],
+			matches: MATCHES,
 			runAt: 'document_start',
 			allFrames: false,
 			persistAcrossSessions: true,

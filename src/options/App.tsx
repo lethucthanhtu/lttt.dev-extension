@@ -173,7 +173,8 @@ function App() {
 		setWikiUrl('');
 		setStatus({
 			kind: 'ok',
-			message: 'Sync disabled and permissions removed.',
+			message:
+				'Settings removed. Web apps with a signed certificate still work.',
 		});
 	};
 
@@ -188,10 +189,11 @@ function App() {
 		<main className='mx-auto max-w-lg p-6 font-sans text-gray-800'>
 			<h1 className='text-xl font-semibold'>Wiki.js session sync</h1>
 			<p className='mt-2 text-sm text-gray-600'>
-				Lets your web app sign you in with your existing Wiki.js session. The
-				extension only answers on the web app below. When you start a sync
-				there, the extension reads your Wiki.js session cookie and sends it
-				straight to that app. The cookie is never stored by the extension or
+				Lets your web app sign you in with your existing Wiki.js session. Web
+				apps with a signed certificate work without any setup here. For another
+				web app, enter it below: the extension then also answers there. When you
+				start a sync, the extension reads your Wiki.js session cookie and sends
+				it straight to that app. The cookie is never stored by the extension or
 				shown to the page.
 			</p>
 
