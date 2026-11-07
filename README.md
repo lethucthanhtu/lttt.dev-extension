@@ -54,7 +54,7 @@ _Coming soon..._
 
 - Git
 
-- Node.js & npm
+- Node.js & pnpm
 
 - A Chromium-based browser (Chrome, Edge, etc.)
 
@@ -70,13 +70,13 @@ _Coming soon..._
 2. Install dependencies:
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. Build the extension:
 
    ```bash
-   npm run build
+   pnpm build
    ```
 
 4. In the `release/` folder, unzip `.zip` file and load in Chrome/Edge via **Load unpacked** (same as above).
@@ -224,7 +224,7 @@ openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt 
 echo "EXTENSION_SIGNING_PUBLIC_KEY=$(openssl pkey -in ~/keys/my-bridge-signing.pem -pubout -outform DER | openssl base64 -A)" >> .env.local
 ```
 
-3. Build (`npm run build`). The build then trusts only certificates signed by your key.
+3. Build (`pnpm build`). The build then trusts only certificates signed by your key.
 4. Sign a certificate for your web apps with your private key (see the Node snippet above), and give it to the web app to send in `ping`/`request`.
 
 If `EXTENSION_SIGNING_PUBLIC_KEY` is empty or unset, the default key is used. The app domain (`lttt.dev`) is fixed in `src/bridge/config.ts` and `src/bridge/register.ts`; a fork changes both.
@@ -255,7 +255,7 @@ Prerequisites:
 - an account on a source site you can log in to (for example `https://accounts.example.com`);
 - a web app deployed on `lttt.dev` or a `*.lttt.dev` subdomain with a valid certificate for its origin.
 
-1. Run `npm run build`, then load `dist/` unpacked. Confirm the ID in `chrome://extensions`.
+1. Run `pnpm build`, then load `dist/` unpacked. Confirm the ID in `chrome://extensions`.
 2. Detection: open the web app. It should detect the extension (`pong` with `version: 5`). On any other site, in the DevTools console, `window.postMessage({source:'lttt-bridge',type:'ping',id:1,cert:'x'}, location.origin)` should get no reply. The app's certificate sent from a `lttt.dev` / `*.lttt.dev` page it does not list should get no reply either.
 3. Consent: send a request for the source. Expect `pending` / `CONSENT_REQUIRED` and the consent window showing the app and the source.
    - Close the window → `result` / `CANCELLED`.
@@ -266,7 +266,7 @@ Prerequisites:
 6. Set the extension's **Site access** to "On specific sites" without the source → `NO_PERMISSION`.
 7. Repeat in Edge / Brave / Opera if you use them.
 
-Note: `npm run dev` (the crxjs dev server) makes all extension files web-accessible for HMR, so dev builds *are* detectable by any site. Test detection only with `npm run build`.
+Note: `pnpm dev` (the crxjs dev server) makes all extension files web-accessible for HMR, so dev builds *are* detectable by any site. Test detection only with `pnpm build`.
 
 ---
 
