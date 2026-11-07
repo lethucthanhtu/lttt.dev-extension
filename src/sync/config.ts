@@ -46,7 +46,8 @@ export const toOrigin = (input: unknown): string | null => {
 	} catch {
 		return null;
 	}
-	if (url.username || url.password) return null;
+	// `*` is a valid URL host character, but never part of a real origin.
+	if (url.username || url.password || url.hostname.includes('*')) return null;
 	if (url.protocol === 'https:' && url.hostname) return url.origin;
 	if (url.protocol === 'http:' && url.hostname === 'localhost')
 		return url.origin;

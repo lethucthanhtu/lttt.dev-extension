@@ -122,7 +122,7 @@ All messages use `window.postMessage(…, location.origin)` on the web app page.
 
 | Page → extension | Extension → page |
 | --- | --- |
-| `{type:'ping', id, cert}` | `{type:'pong', id, version: 3, extVersion: '1.4.0'}` |
+| `{type:'ping', id, cert}` | `{type:'pong', id, version: 3, extVersion: '1.5.0'}` |
 | `{type:'sync', id, cert}` | `{type:'result', id, ok, code?}` |
 | — | `{type:'synced', ok, code?}` (unsolicited, no `id`) |
 
@@ -135,8 +135,10 @@ payload = {"v": 1, "apps": ["https://app.example.com", "http://localhost:3000"],
 
 - The signature is ECDSA P-256 with SHA-256, in IEEE-P1363 form (64 bytes, `r‖s`), over the ASCII bytes of the first part. base64url has no padding.
 - `apps` holds 1 to 32 origins and `wiki` one origin. Each must be `https://…` (or `http://localhost[:port]`), without credentials. Any path is ignored.
+- **Wildcards (`"v": 2`, since 1.5.0).** With `"v": 2`, an `apps` entry may also be `https://*.example.com`. It matches every `https` origin on the default port whose host is a subdomain of `example.com`, at any depth (`a.example.com`, `a.b.example.com`), but not `example.com` itself (list it separately if needed). The base domain needs at least two labels (`https://*.com` is invalid), and no port or path is allowed. An invalid entry invalidates the whole certificate. Extensions older than 1.5.0 reject `v: 2` certificates, so keep sending a `v: 1` certificate if you must support them.
+  - **Security:** the wiki token goes to whichever matching subdomain asks for it. Use a wildcard only if you control every subdomain: no user-generated content, no third-party previews, no dangling DNS records (subdomain takeover).
 - The background verifies the certificate with WebCrypto against the public key built into the extension, and caches the result per certificate string in memory.
-- A page is accepted only if the certificate is valid **and** `sender.origin` is in `apps` **and** it is the top frame. A missing, oversized, malformed or badly signed certificate is treated as no certificate: the page gets no reply.
+- A page is accepted only if the certificate is valid **and** `sender.origin` is in `apps` (or matches a wildcard) **and** it is the top frame. A missing, oversized, malformed or badly signed certificate is treated as no certificate: the page gets no reply.
 - Signing a certificate (outside this repo) with Node:
 
   ```js

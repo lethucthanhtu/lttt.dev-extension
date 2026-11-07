@@ -6,7 +6,8 @@
  * The token is never logged, never stored and never returned to the page.
  *
  * A page is an allowed web app only if it sends a certificate signed with the
- * project key (cert.ts) whose `apps` list the sender's origin. Its wiki is the
+ * project key (cert.ts) whose `apps` list the sender's origin, or (v2) a
+ * wildcard `https://*.<domain>` covering it. Its wiki is the
  * certificate's `wiki`. No setup in the extension is needed. Any other page
  * gets no reply at all.
  *
@@ -24,7 +25,7 @@ import {
 	type SyncErrorCode,
 	type SyncResult,
 } from './config';
-import { verifyCert } from './cert';
+import { certAllows, verifyCert } from './cert';
 import { syncContentScript } from './register';
 
 const fail = (code: SyncErrorCode): SyncResult => ({ ok: false, code });
@@ -240,7 +241,7 @@ const allowedApp = async (
 		return null;
 	}
 	const cert = await verifyCert(message.cert);
-	if (!cert?.apps.includes(sender.origin)) return null;
+	if (!cert || !certAllows(cert, sender.origin)) return null;
 	return { appOrigin: sender.origin, wikiOrigin: cert.wiki };
 };
 
