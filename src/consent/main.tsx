@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import Consent from './Consent';
+import '../fonts.css';
 import '../tailwind.css';
 
 createRoot(document.getElementById('root')!).render(

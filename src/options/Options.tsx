@@ -3,7 +3,24 @@
  * revokes them. Revoking removes the decision, so the app asks again.
  */
 import { useEffect, useState } from 'react';
-import { GRANTS_KEY, type Grants } from '../bridge/config';
+import { GRANTS_KEY, type Grants } from '@/bridge/config';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from '@/components/ui/card';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table';
 
 const getGrants = async (): Promise<Grants> =>
 	((await chrome.storage.local.get(GRANTS_KEY))[GRANTS_KEY] as Grants) ?? {};
@@ -30,9 +47,7 @@ const toRows = (grants: Grants): Row[] =>
 				})
 		);
 
-const CELL =
-	'border-b border-neutral-400/30 px-2 py-1.5 text-left align-middle';
-const ORIGIN = `${CELL} font-mono break-all`;
+const ORIGIN = 'font-mono whitespace-normal break-all';
 
 export default function Options() {
 	/** null = loading. */
@@ -52,48 +67,63 @@ export default function Options() {
 	}, []);
 
 	return (
-		<main className='mx-auto max-w-3xl space-y-4 p-6 leading-relaxed'>
-			<h1 className='text-xl font-semibold'>Site access</h1>
-			<p>
-				Web apps on lttt.dev that asked to use your session on another site.
-				Revoke a decision to be asked again next time.
-			</p>
-			{rows?.length === 0 && <p>No decisions yet.</p>}
-			{!!rows?.length && (
-				<table className='w-full border-collapse'>
-					<thead>
-						<tr>
-							<th className={CELL}>App</th>
-							<th className={CELL}>Site</th>
-							<th className={CELL}>Decision</th>
-							<th className={CELL} />
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map(({ app, source, allow, at }) => (
-							<tr key={`${app} ${source}`}>
-								<td className={ORIGIN}>{app}</td>
-								<td className={ORIGIN}>{source}</td>
-								<td
-									className={`${CELL} ${allow ? 'text-green-600' : 'text-red-600'}`}
-									title={new Date(at).toLocaleString()}
-								>
-									{allow ? 'Allowed' : 'Denied'}
-								</td>
-								<td className={CELL}>
-									<button
-										className='cursor-pointer rounded-md border border-neutral-400/50 px-3 py-0.5'
-										type='button'
-										onClick={() => revoke(app, source)}
-									>
-										Revoke
-									</button>
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			)}
+		<main className='mx-auto max-w-3xl p-6'>
+			<Card>
+				<CardHeader>
+					<CardTitle>
+						<h1 className='text-xl'>Site access</h1>
+					</CardTitle>
+					<CardDescription>
+						Web apps on lttt.dev that asked to use your session on another
+						site. Revoke a decision to be asked again next time.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					{rows?.length === 0 && (
+						<p className='text-muted-foreground text-sm'>No decisions yet.</p>
+					)}
+					{!!rows?.length && (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>App</TableHead>
+									<TableHead>Site</TableHead>
+									<TableHead>Decision</TableHead>
+									<TableHead>
+										<span className='sr-only'>Actions</span>
+									</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{rows.map(({ app, source, allow, at }) => (
+									<TableRow key={`${app} ${source}`}>
+										<TableCell className={ORIGIN}>{app}</TableCell>
+										<TableCell className={ORIGIN}>{source}</TableCell>
+										<TableCell>
+											<Badge
+												variant={allow ? 'secondary' : 'destructive'}
+												title={new Date(at).toLocaleString()}
+											>
+												{allow ? 'Allowed' : 'Denied'}
+											</Badge>
+										</TableCell>
+										<TableCell className='text-right'>
+											<Button
+												variant='outline'
+												size='sm'
+												aria-label={`Revoke ${app} on ${source}`}
+												onClick={() => revoke(app, source)}
+											>
+												Revoke
+											</Button>
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
+				</CardContent>
+			</Card>
 		</main>
 	);
 }

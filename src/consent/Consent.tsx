@@ -9,7 +9,8 @@ import {
 	CONSENTS_KEY,
 	RUNTIME_CONSENT,
 	type Consent as ConsentRequest,
-} from '../bridge/config';
+} from '@/bridge/config';
+import { Button } from '@/components/ui/button';
 
 /** Delay before Allow is enabled, so a stray click or key cannot approve. */
 const ALLOW_DELAY_MS = 1000;
@@ -23,9 +24,7 @@ const loadRequest = async (): Promise<ConsentRequest | null> => {
 	return request && request.expiresAt >= Date.now() ? request : null;
 };
 
-const ORIGIN = 'font-mono font-semibold break-all';
-const BUTTON =
-	'rounded-md border border-neutral-400/50 px-4 py-1.5 enabled:cursor-pointer disabled:opacity-50';
+const ORIGIN = 'font-mono font-medium break-all text-foreground';
 
 export default function Consent() {
 	/** undefined = loading, null = expired or unknown. */
@@ -57,45 +56,39 @@ export default function Consent() {
 	if (request === undefined) return null;
 	if (request === null)
 		return (
-			<main className='p-5 leading-relaxed'>
+			<main className='text-muted-foreground p-5 text-sm leading-relaxed'>
 				<p>This request has expired. You can close this window.</p>
 			</main>
 		);
 
 	return (
-		<main className='space-y-3 p-5 leading-relaxed'>
+		<main className='flex min-h-svh flex-col gap-3 p-5 text-sm leading-relaxed'>
 			<h1 className='text-lg font-semibold'>Allow access?</h1>
-			<p>
+			<p className='text-muted-foreground'>
 				<span className={ORIGIN}>{request.appOrigin}</span> wants to use your
 				session on
 			</p>
 			<p>
 				<span className={ORIGIN}>{request.source}</span>
 			</p>
-			<p>
+			<p className='text-muted-foreground'>
 				If you allow it, that app can read your cookies for that site and load
 				pages from it as you, whenever you have it open, until you revoke this
 				in the extension options.
 			</p>
-			<p className='text-sm opacity-80'>Only allow sites you trust.</p>
-			<div className='flex justify-end gap-2 pt-5'>
-				<button
+			<p className='font-medium'>Only allow sites you trust.</p>
+			<div className='mt-auto flex justify-end gap-2 pt-2'>
+				<Button
 					ref={denyButton}
-					className={BUTTON}
-					type='button'
+					variant='outline'
 					disabled={answered}
 					onClick={() => answer(false)}
 				>
 					Deny
-				</button>
-				<button
-					className={`${BUTTON} border-blue-600 bg-blue-600 text-white`}
-					type='button'
-					disabled={!ready || answered}
-					onClick={() => answer(true)}
-				>
+				</Button>
+				<Button disabled={!ready || answered} onClick={() => answer(true)}>
 					Allow
-				</button>
+				</Button>
 			</div>
 		</main>
 	);

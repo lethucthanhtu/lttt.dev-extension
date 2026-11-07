@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+dist/
+release/
+# shadcn/ui generated components (keep them diffable against upstream)
+src/components/ui/

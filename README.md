@@ -131,7 +131,7 @@ All messages use `window.postMessage(…, location.origin)` on the web app page.
 
 | Page → extension | Extension → page |
 | --- | --- |
-| `{type:'ping', id, cert}` | `{type:'pong', id, version: 5, extVersion: '3.1.0'}` |
+| `{type:'ping', id, cert}` | `{type:'pong', id, version: 5, extVersion: '3.2.0'}` |
 | `{type:'request', id, cert, request}` | `{type:'pending', id, code}` then `{type:'result', id, ok, data?, code?}` |
 | | or `{type:'result', id, ok, data?, code?}` directly |
 
